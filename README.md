@@ -40,5 +40,6 @@ python setup.py install
   - `src` contains C++/CUDA code agnostic of PyTorch
   - `pytorch_bindings` contains the pytorch-based module of the LF-MMI objf function
     - `src`  contains C++ level implementation of the LF-MMI objf function
-    - `pychain_pytorch`  contains python level implementation of the LF-MMI objf function. This includes the actual loss-function, which can be bound the C++ level code.
+    - `pychain_pytorch`  contains python level implementation of the LF-MMI objf function. This includes the actual loss-function module, which can be bound the C++ level code.
+      - `__init__.py`  the actual implementation of the python module
   - `openfst_bindings` contains the openfst-based module to interact with FSTs
