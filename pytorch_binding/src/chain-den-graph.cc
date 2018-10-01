@@ -34,9 +34,12 @@ typedef float BaseFloat;
 DenominatorGraph::DenominatorGraph(const fst::StdVectorFst &fst,
                                    int32 num_pdfs):
     num_pdfs_(num_pdfs) {
-  py::print("Before initialization, transition-probs=", transition_probs_);
+
+  if (GetVerboseLevel() > 2)
+    py::print("Before initialization, transition-probs=", transition_probs_);
   SetTransitions(fst, num_pdfs);
-  py::print("After initialization, transition-probs=", transition_probs_);
+  if (GetVerboseLevel() > 2)
+    py::print("After initialization, transition-probs=", transition_probs_);
   SetInitialProbs(fst);
 }
 
@@ -46,45 +49,42 @@ void DenominatorGraph::SetTransitions(const fst::StdVectorFst &fst,
   
   std::vector<int64> indices;
   std::vector<BaseFloat> log_probs;
-  std::vector<int32> labels;
 
   for (int32 s = 0; s < num_states; s++) {
     for (fst::ArcIterator<fst::StdVectorFst> aiter(fst, s); !aiter.Done();
          aiter.Next()) {
       const fst::StdArc &arc = aiter.Value();
+      int32 pdf_id = arc.ilabel - 1;
+      assert(pdf_id >= 0 && pdf_id < num_pdfs);
       indices.push_back(s);
       indices.push_back(arc.nextstate);
+      indices.push_back(pdf_id);
       log_probs.push_back(-arc.weight.Value());
-      int32 pdf_id = arc.ilabel - 1;
-      labels.push_back(pdf_id);
-      assert(pdf_id >= 0 && pdf_id < num_pdfs);
     }
   }
 
-  py::print("indices=", indices);
+  if (GetVerboseLevel() > 2)
+    py::print("indices=", indices);
 
-  assert(indices.size() == log_probs.size() * 2 && 
-         log_probs.size() == labels.size());
+  assert(indices.size() == log_probs.size() * 3);
 
   int64 num_transitions = log_probs.size();
   
-  transitions_.resize_({2, num_transitions});
+  transitions_.resize_({3, num_transitions});
   transitions_.copy_(torch::CPU(at::kLong)
-    .tensorFromBlob(indices.data(), {num_transitions, 2})
+    .tensorFromBlob(indices.data(), {num_transitions, 3})
     .transpose(0, 1));
-  py::print("transitions=", transitions_);
+  if (GetVerboseLevel() > 2)
+    py::print("transitions=", transitions_);
 
   transition_probs_.resize_({num_transitions});
   transition_probs_.copy_(torch::CPU(at::kFloat)
       .tensorFromBlob(log_probs.data(), {num_transitions}));
-  py::print("transition-probs-before-exp=", transition_probs_);
+  if (GetVerboseLevel() > 2)
+    py::print("transition-probs-before-exp=", transition_probs_);
   transition_probs_.exp_();
-  py::print("transition-probs=", transition_probs_);
-
-  transition_labels_.resize_({num_transitions});
-  transition_labels_.copy_(torch::CPU(at::kInt)
-      .tensorFromBlob(labels.data(), {num_transitions}));
-  py::print("transition-labels=", transition_labels_);
+  if (GetVerboseLevel() > 2)
+    py::print("transition-probs=", transition_probs_);
 }
 
 void DenominatorGraph::SetInitialProbs(const fst::StdVectorFst &fst) {
@@ -396,31 +396,7 @@ void CreateDenominatorFst(const ContextDependency &ctx_dep,
 */
 
 int32 DenominatorGraph::NumStates() const {
-  return transition_probs_.size(0);
+  return initial_probs_.size(0);
 }
 
-//PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-//  pybind11::class_<chain::DenominatorGraph>(m, "DenominatorGraph");
-//    //.def("initial_probs", &chain::DenominatorGraph::InitialProbs)
-//    //.def("transition_probs", &chain::DenominatorGraph::TransitionProbs)
-//    //.def("transition_labels", &chain::DenominatorGraph::TransitionLabels)
-//    //.def("num_states", &chain::DenominatorGraph::NumStates)
-//    //.def("num_pdfs", &chain::DenominatorGraph::NumPdfs);
-//}
-
-}  // namespace kaldi
-
-//at::Tensor add(const at::Tensor &a, const at::Tensor &b) {
-//  return a.add(b); 
-//}
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  py::class_<chain::DenominatorGraph>(m, "DenominatorGraph")
-    .def(py::init<const fst::StdVectorFst&, int32>()) 
-    .def("initial_probs", &chain::DenominatorGraph::InitialProbs)
-    .def("transitions", &chain::DenominatorGraph::Transitions)
-    .def("transition_probs", &chain::DenominatorGraph::TransitionProbs)
-    .def("transition_labels", &chain::DenominatorGraph::TransitionLabels)
-    .def("num_states", &chain::DenominatorGraph::NumStates)
-    .def("num_pdfs", &chain::DenominatorGraph::NumPdfs);
 }

@@ -17,19 +17,15 @@
 // See the Apache 2 License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef CHAIN_DEN_GRAPH_H_
 #define CHAIN_DEN_GRAPH_H_
 
 #include <vector>
 #include <fst/fstlib.h>
 #include <torch/torch.h>
+#include "base.h"
 
 namespace chain {
-
-typedef int int32;
-typedef long int64;
-typedef float BaseFloat;
 
 /**  This class is responsible for storing the FST that we use as the
      'anti-model' or 'denominator-model', that models all possible phone
@@ -59,7 +55,6 @@ class DenominatorGraph {
 
   const at::Tensor &Transitions() const { return transitions_; }
   const at::Tensor &TransitionProbs() const { return transition_probs_; }
-  const at::Tensor &TransitionLabels() const { return transition_labels_; }
 
   // returns the initial-probs of the HMM-states... note, these initial-probs
   // don't mean initial at the start of the file, because we usually train on
@@ -99,9 +94,8 @@ class DenominatorGraph {
   // sequence.
   void SetInitialProbs(const fst::StdVectorFst &fst);
 
-  at::Tensor transitions_{torch::CPU(at::kInt).zeros({0, 0})};
+  at::Tensor transitions_{torch::CPU(at::kInt).zeros({0, 0, 0})};
   at::Tensor transition_probs_{torch::CPU(at::kFloat).zeros({0})};
-  at::Tensor transition_labels_{torch::CPU(at::kInt).zeros({0})};
 
   // The initial-probability of all states, used on the first frame of a
   // sequence [although we also apply the constraint that on the first frame,
