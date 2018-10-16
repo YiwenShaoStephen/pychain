@@ -23,23 +23,16 @@
 #include <torch/torch.h>
 #include "chain-den-graph.h"
 
-namespace py = pybind11;
-
 namespace chain {
-
-typedef int int32;
-typedef long int64;
-typedef float BaseFloat;
 
 DenominatorGraph::DenominatorGraph(const fst::StdVectorFst &fst,
                                    int32 num_pdfs):
     num_pdfs_(num_pdfs) {
-
   if (GetVerboseLevel() > 2)
-    py::print("Before initialization, transition-probs=", transition_probs_);
+    py::print("Before initialization, transition-probs=", forward_transition_probs_);
   SetTransitions(fst, num_pdfs);
   if (GetVerboseLevel() > 2)
-    py::print("After initialization, transition-probs=", transition_probs_);
+    py::print("After initialization, transition-probs=", forward_transition_probs_);
   SetInitialProbs(fst);
 }
 
@@ -47,8 +40,17 @@ void DenominatorGraph::SetTransitions(const fst::StdVectorFst &fst,
                                       int32 num_pdfs) {
   int32 num_states = fst.NumStates();
   
-  std::vector<int64> indices;
-  std::vector<BaseFloat> log_probs;
+  struct GraphTransition {
+    int32 nextstate;
+    int32 pdf_id;
+    BaseFloat log_prob;
+
+    GraphTransition(int32 ns, int32 pdf, int32 log_prob):
+      nextstate(ns), pdf_id(pdf), log_prob(log_prob) { }
+  };
+  
+  std::vector<std::vector<GraphTransition> > transitions_out_tup(num_states);
+  std::vector<std::vector<GraphTransition> > transitions_in_tup(num_states);
 
   for (int32 s = 0; s < num_states; s++) {
     for (fst::ArcIterator<fst::StdVectorFst> aiter(fst, s); !aiter.Done();
@@ -56,35 +58,69 @@ void DenominatorGraph::SetTransitions(const fst::StdVectorFst &fst,
       const fst::StdArc &arc = aiter.Value();
       int32 pdf_id = arc.ilabel - 1;
       assert(pdf_id >= 0 && pdf_id < num_pdfs);
-      indices.push_back(s);
-      indices.push_back(arc.nextstate);
-      indices.push_back(pdf_id);
-      log_probs.push_back(-arc.weight.Value());
+      transitions_out_tup[s].emplace_back(arc.nextstate, pdf_id, -arc.weight.Value()); 
+      transitions_in_tup[arc.nextstate].emplace_back(s, pdf_id, -arc.weight.Value()); 
     }
   }
 
-  if (GetVerboseLevel() > 2)
-    py::print("indices=", indices);
+  std::vector<int32> forward_transition_indices(2*num_states);
+  std::vector<int32> forward_transitions;
+  std::vector<BaseFloat> forward_log_probs;
+  for (int32 s = 0; s < num_states; s++) {
+    forward_transition_indices[2*s] = static_cast<int32>(forward_transitions.size()) / 2;
+    for (auto it = transitions_out_tup[s].begin(); 
+         it != transitions_out_tup[s].end(); ++it) {
+      auto& transition = *it;
+      forward_transitions.push_back(transition.nextstate);
+      forward_transitions.push_back(transition.pdf_id);
+      forward_log_probs.push_back(transition.log_prob);
+    }
+    forward_transition_indices[2*s+1] = static_cast<int32>(forward_transitions.size()) / 2;
+  }
 
-  assert(indices.size() == log_probs.size() * 3);
-
-  int64 num_transitions = log_probs.size();
+  std::vector<int32> backward_transition_indices(2 * num_states);
+  std::vector<int32> backward_transitions;
+  std::vector<BaseFloat> backward_log_probs;
+  for (int32 s = 0; s < num_states; s++) {
+    backward_transition_indices[2*s] = static_cast<int32>(backward_transitions.size()) / 2;
+    for (auto it = transitions_in_tup[s].begin(); 
+         it != transitions_in_tup[s].end(); ++it) {
+      auto& transition = *it;
+      backward_transitions.push_back(transition.nextstate);
+      backward_transitions.push_back(transition.pdf_id);
+      backward_log_probs.push_back(transition.log_prob);
+    }
+    backward_transition_indices[2*s+1] = static_cast<int32>(backward_transitions.size()) / 2;
+  }
   
-  transitions_.resize_({3, num_transitions});
-  transitions_.copy_(torch::CPU(at::kLong)
-    .tensorFromBlob(indices.data(), {num_transitions, 3})
-    .transpose(0, 1));
-  if (GetVerboseLevel() > 2)
-    py::print("transitions=", transitions_);
+  int32 num_transitions = forward_log_probs.size();
 
-  transition_probs_.resize_({num_transitions});
-  transition_probs_.copy_(torch::CPU(at::kFloat)
-      .tensorFromBlob(log_probs.data(), {num_transitions}));
-  if (GetVerboseLevel() > 2)
-    py::print("transition-probs-before-exp=", transition_probs_);
-  transition_probs_.exp_();
-  if (GetVerboseLevel() > 2)
-    py::print("transition-probs=", transition_probs_);
+  forward_transitions_.resize_({num_transitions, 2});
+  forward_transitions_.copy_(torch::CPU(at::kInt)
+    .tensorFromBlob(forward_transitions.data(), {num_transitions, 2}));
+
+  forward_transition_indices_.resize_({num_states, 2});
+  forward_transition_indices_.copy_(torch::CPU(at::kInt)
+      .tensorFromBlob(forward_transition_indices.data(), {num_states, 2}));
+  
+  forward_transition_probs_.resize_({num_transitions});
+  forward_transition_probs_.copy_(torch::CPU(at::kFloat)
+      .tensorFromBlob(forward_log_probs.data(), {num_transitions}));
+  
+  backward_transitions_.resize_({num_transitions, 2});
+  backward_transitions_.copy_(torch::CPU(at::kInt)
+    .tensorFromBlob(backward_transitions.data(), {num_transitions, 2}));
+
+  backward_transition_indices_.resize_({num_states, 2});
+  backward_transition_indices_.copy_(torch::CPU(at::kInt)
+      .tensorFromBlob(backward_transition_indices.data(), {num_states, 2}));
+  
+  backward_transition_probs_.resize_({num_transitions});
+  backward_transition_probs_.copy_(torch::CPU(at::kFloat)
+      .tensorFromBlob(backward_log_probs.data(), {num_transitions}));
+
+  forward_transition_probs_.exp_();
+  backward_transition_probs_.exp_();
 }
 
 void DenominatorGraph::SetInitialProbs(const fst::StdVectorFst &fst) {
