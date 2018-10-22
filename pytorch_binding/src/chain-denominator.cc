@@ -128,7 +128,7 @@ void DenominatorComputation::AlphaGeneralFrame(int32 t) {
                                    backward_transitions.data<int32>(),
                                    backward_transition_probs.data<scalar_t>(),
                                    num_sequences, den_graph_.NumStates(),
-                                   prob.data<scalar_t>(), probs.size(1), 
+                                   probs.data<scalar_t>(), probs.size(1), 
                                    prev_alpha_dash.data<scalar_t>(), 
                                    this_alpha.data<scalar_t>());
             }));
@@ -416,9 +416,9 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
         forward_transition_indices = forward_transition_indices.narrow(
             0, dimGrid.y, forward_transition_indices.size(1) - dimGrid.y);
         //this_alpha_dash += dimGrid.y * num_sequences;
-        this_alpha = this_alpha.narrow(
+        this_alpha_dash = this_alpha_dash.narrow(
             0, dimGrid.y * num_sequences, 
-            this_alpha.size(0) - dimGrid.y * num_sequences);
+            this_alpha_dash.size(0) - dimGrid.y * num_sequences);
         //this_beta_dash += dimGrid.y * num_sequences;
         this_beta_dash = this_beta_dash.narrow(
             0, dimGrid.y * num_sequences, 

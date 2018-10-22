@@ -28,6 +28,7 @@
 #include "base.h"
 #include "chain-den-graph.h"
 #include "chain-training.h"
+#include "chain-kernels-ansi.h"
 
 namespace chain {
 
