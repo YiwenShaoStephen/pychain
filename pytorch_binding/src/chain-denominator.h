@@ -209,8 +209,7 @@ class DenominatorComputation {
   // this adds deriv_weight times (the derivative of the log-prob w.r.t. the
   // nnet output), to 'nnet_output_deriv'.
   // returns true if everything seemed OK, false if a failure was detected.
-  bool Backward(BaseFloat deriv_weight,
-                at::Tensor nnet_output_deriv);
+  at::Tensor Backward();
 
  private:
   // Defining this constant as an enum is easier.  it controls a memory/speed

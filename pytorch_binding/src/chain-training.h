@@ -20,6 +20,7 @@
 
 #include "base.h"
 #include "chain-denominator.h"
+#include <vector>
 
 #ifndef CHAIN_CHAIN_TRAINING_H_
 #define CHAIN_CHAIN_TRAINING_H_
@@ -53,11 +54,10 @@ struct ChainTrainingOptions {
                           xent_regularize(0.0) { }
 };
 
-BaseFloat ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
+std::vector<at::Tensor> ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
                     const DenominatorGraph &den_graph,
                     int32 num_sequences,
-                    at::Tensor nnet_output,
-                    at::Tensor nnet_output_deriv);
+		    at::Tensor nnet_output);
 
 }  // namespace chain
 

@@ -297,8 +297,8 @@ BaseFloat DenominatorComputation::ComputeTotLogLike() {
 
 
 
-bool DenominatorComputation::Backward(
-    BaseFloat deriv_weight, at::Tensor nnet_output_deriv) {
+at::Tensor DenominatorComputation::Backward() {
+  at::Tensor nnet_output_deriv = at::zeros_like(exp_nnet_output_transposed_).transpose(0, 1);
   BetaDashLastFrame();
   Beta(frames_per_sequence_);
   for (int32 t = frames_per_sequence_ - 1; t >= 0; t--) {
@@ -327,13 +327,12 @@ bool DenominatorComputation::Backward(
       //output_deriv_part.AddMat(deriv_weight, transposed_deriv_part, kTrans);
       at::Tensor output_deriv_part = nnet_output_deriv
         .narrow(0, t * num_sequences_, chunk_frames * num_sequences_);
-      output_deriv_part.add_(transposed_deriv_part.transpose(0, 1), 
-                             deriv_weight);
+      output_deriv_part.add_(transposed_deriv_part.transpose(0, 1));
       if (t != 0)
         transposed_deriv_part.zero_();
     }
   }
-  return ok_;
+  return nnet_output_deriv;
 }
 
 void DenominatorComputation::BetaDashLastFrame() {
