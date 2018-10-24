@@ -54,10 +54,11 @@ struct ChainTrainingOptions {
                           xent_regularize(0.0) { }
 };
 
-std::vector<at::Tensor> ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
-                    const DenominatorGraph &den_graph,
-                    int32 num_sequences,
-		    at::Tensor nnet_output);
+at::Tensor ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
+			       const DenominatorGraph &den_graph,
+			       int32 num_sequences,
+			       at::Tensor nnet_output,
+			       at::Tensor nnet_output_deriv);
 
 }  // namespace chain
 

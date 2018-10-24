@@ -36,6 +36,17 @@ DenominatorComputation::DenominatorComputation(
 
   int32 alpha_beta_size = den_graph_.NumStates() * num_sequences_;
 
+#if HAVE_CUDA == 1
+  if (nnet_output.is_cuda()) {
+    nnet_output_deriv_transposed_ = torch::CUDA(at::kFloat).empty({0, 0});
+    alpha_ = torch::CUDA(at::kFloat).empty({0, 0});
+    beta_ = torch::CUDA(at::kFloat).empty({0, 0});
+    tot_prob_ = torch::CUDA(at::kFloat).empty({0, 0});
+    tot_log_prob_ = torch::CUDA(at::kFloat).empty({0, 0});
+    log_correction_term_ = torch::CUDA(at::kFloat).empty({0, 0});
+    exp_nnet_output_transposed_ = torch::CUDA(at::kFloat).empty({0, 0});
+  }
+#endif
   nnet_output_deriv_transposed_.resize_({nnet_output.size(1),
     std::min<int32>(nnet_output.size(0),
                     static_cast<int32>(kMaxDerivTimeSteps) *
@@ -122,16 +133,24 @@ void DenominatorComputation::AlphaGeneralFrame(int32 t) {
     while (1) {
       if (dimGrid.y > 65535)  // the hardware doesn't allow more than this.
         dimGrid.y = 65535;
-      AT_DISPATCH_FLOATING_TYPES(probs.type(), "chain_hmm_forward", ([&] {
-            cuda_chain_hmm_forward<scalar_t>(dimGrid, dimBlock,
-                                   backward_transition_indices.data<int32>(), 
-                                   backward_transitions.data<int32>(),
-                                   backward_transition_probs.data<scalar_t>(),
-                                   num_sequences, den_graph_.NumStates(),
-                                   probs.data<scalar_t>(), probs.size(1), 
-                                   prev_alpha_dash.data<scalar_t>(), 
-                                   this_alpha.data<scalar_t>());
-            }));
+      // AT_DISPATCH_FLOATING_TYPES(probs.type(), "chain_hmm_forward", ([&] {
+      //       cuda_chain_hmm_forward<scalar_t>(dimGrid, dimBlock,
+      //                              backward_transition_indices.data<int32>(), 
+      //                              backward_transitions.data<int32>(),
+      //                              backward_transition_probs.data<scalar_t>(),
+      //                              num_sequences, den_graph_.NumStates(),
+      //                              probs.data<scalar_t>(), probs.size(1), 
+      //                              prev_alpha_dash.data<scalar_t>(), 
+      //                              this_alpha.data<scalar_t>());
+      //       }));
+      cuda_chain_hmm_forward(dimGrid, dimBlock,
+			     backward_transition_indices.data<int32>(), 
+			     backward_transitions.data<int32>(),
+			     backward_transition_probs.data<BaseFloat>(),
+			     num_sequences, den_graph_.NumStates(),
+			     probs.data<BaseFloat>(), probs.size(1), 
+			     prev_alpha_dash.data<BaseFloat>(), 
+			     this_alpha.data<BaseFloat>());
 
       if (dimGrid.y == num_hmm_states) {
         break;  // this is the normal case.
@@ -245,7 +264,7 @@ void DenominatorComputation::Beta(int32 t) {
       .expand({den_graph_.NumStates(), num_sequences_}));
 }
 
-BaseFloat DenominatorComputation::Forward() {
+at::Tensor DenominatorComputation::Forward() {
   AlphaFirstFrame();
   AlphaDash(0);
   for (int32 t = 1; t <= frames_per_sequence_; t++) {
@@ -255,7 +274,7 @@ BaseFloat DenominatorComputation::Forward() {
   return ComputeTotLogLike();
 }
 
-BaseFloat DenominatorComputation::ComputeTotLogLike() {
+at::Tensor DenominatorComputation::ComputeTotLogLike() {
   tot_prob_.resize_({num_sequences_});
 
   int32 alpha_size = den_graph_.NumStates() * num_sequences_;
@@ -272,7 +291,7 @@ BaseFloat DenominatorComputation::ComputeTotLogLike() {
   // we should probably add an ApplyLog() function that takes a vector argument.
   tot_log_prob_.resize_as_(tot_prob_);
   tot_log_prob_.copy_(tot_prob_.log());
-  BaseFloat tot_log_prob = at::Scalar(tot_log_prob_.sum()).toFloat();
+  at::Tensor tot_log_prob = tot_log_prob_.sum();
 
   // We now have to add something for the arbitrary scaling factor.  [note: the
   // purpose of the arbitrary scaling factors was to keep things in a good
@@ -290,15 +309,13 @@ BaseFloat DenominatorComputation::ComputeTotLogLike() {
     alpha_.narrow(1, alpha_size, num_sequences_);
   at::Tensor log_inv_arbitrary_scales = at::empty_like(inv_arbitrary_scales);
   log_inv_arbitrary_scales.copy_(inv_arbitrary_scales.log());
-  BaseFloat log_inv_arbitrary_scales_product =
-      at::Scalar(log_inv_arbitrary_scales.sum()).toFloat();
-  return tot_log_prob + log_inv_arbitrary_scales_product;
+  at::Tensor log_inv_arbitrary_scales_product = log_inv_arbitrary_scales.sum();
+  return tot_log_prob.add(log_inv_arbitrary_scales_product);
 }
 
 
 
-at::Tensor DenominatorComputation::Backward() {
-  at::Tensor nnet_output_deriv = at::zeros_like(exp_nnet_output_transposed_).transpose(0, 1);
+bool DenominatorComputation::Backward(at::Tensor nnet_output_deriv) {
   BetaDashLastFrame();
   Beta(frames_per_sequence_);
   for (int32 t = frames_per_sequence_ - 1; t >= 0; t--) {
@@ -332,7 +349,7 @@ at::Tensor DenominatorComputation::Backward() {
         transposed_deriv_part.zero_();
     }
   }
-  return nnet_output_deriv;
+  return ok_;
 }
 
 void DenominatorComputation::BetaDashLastFrame() {
@@ -392,19 +409,30 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
     while (1) {
       if (dimGrid.y > 65535)  // the hardware doesn't allow more than this.
         dimGrid.y = 65535;
-      AT_DISPATCH_FLOATING_TYPES(probs.type(), "chain_hmm_backward", ([&] {
-            cuda_chain_hmm_backward<scalar_t>(dimGrid, dimBlock, 
-                                    forward_transition_indices.data<int32>(),
-                                    forward_transitions.data<int32>(),
-                                    forward_transition_probs.data<scalar_t>(),
-                                    num_sequences, num_hmm_states,
-                                    probs.data<scalar_t>(), probs.stride(0),
-                                    this_alpha_dash.data<scalar_t>(), 
-                                    next_beta.data<scalar_t>(),
-                                    this_beta_dash.data<scalar_t>(),
-                                    log_prob_deriv.data<scalar_t>(),
-                                    log_prob_deriv.stride(0));
-            }));
+      // AT_DISPATCH_FLOATING_TYPES(probs.type(), "chain_hmm_backward", ([&] {
+      //       cuda_chain_hmm_backward<scalar_t>(dimGrid, dimBlock, 
+      //                               forward_transition_indices.data<int32>(),
+      //                               forward_transitions.data<int32>(),
+      //                               forward_transition_probs.data<scalar_t>(),
+      //                               num_sequences, num_hmm_states,
+      //                               probs.data<scalar_t>(), probs.stride(0),
+      //                               this_alpha_dash.data<scalar_t>(), 
+      //                               next_beta.data<scalar_t>(),
+      //                               this_beta_dash.data<scalar_t>(),
+      //                               log_prob_deriv.data<scalar_t>(),
+      //                               log_prob_deriv.stride(0));
+      //       }));
+      cuda_chain_hmm_backward(dimGrid, dimBlock, 
+			      forward_transition_indices.data<int32>(),
+			      forward_transitions.data<int32>(),
+			      forward_transition_probs.data<BaseFloat>(),
+			      num_sequences, num_hmm_states,
+			      probs.data<BaseFloat>(), probs.stride(0),
+			      this_alpha_dash.data<BaseFloat>(), 
+			      next_beta.data<BaseFloat>(),
+			      this_beta_dash.data<BaseFloat>(),
+			      log_prob_deriv.data<BaseFloat>(),
+			      log_prob_deriv.stride(0));
       if (dimGrid.y == num_hmm_states) {
         break;  // this is the normal case.
       } else {

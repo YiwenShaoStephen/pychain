@@ -205,12 +205,12 @@ class DenominatorComputation {
   // factor, manually.  Note: this log-like will be negated before it
   // is added into the objective function, since this is the denominator
   // computation.
-  BaseFloat Forward();
+  at::Tensor Forward();
 
   // this adds deriv_weight times (the derivative of the log-prob w.r.t. the
   // nnet output), to 'nnet_output_deriv'.
   // returns true if everything seemed OK, false if a failure was detected.
-  at::Tensor Backward();
+  bool Backward(at::Tensor nnet_output_deriv);
 
  private:
   // Defining this constant as an enum is easier.  it controls a memory/speed
@@ -232,7 +232,7 @@ class DenominatorComputation {
   // doing correction) log_correction_term_.  Note, this won't be scaled by
   // 'deriv_scale' (which of course we haven't seen by the time this is called,
   // from the Forward() computation).
-  BaseFloat ComputeTotLogLike();
+  at::Tensor ComputeTotLogLike();
 
   void BetaDashLastFrame();
   // beta computation for 0 <= beta < num_time_steps_.
@@ -259,41 +259,41 @@ class DenominatorComputation {
   //
   // The row-index is the pdf-id; and the column index equals (frame_index *
   // num_sequences + sequence_index).
-  at::Tensor exp_nnet_output_transposed_{torch::CPU_OR_CUDA(at::kFloat).empty({0, 0})};
+  at::Tensor exp_nnet_output_transposed_{torch::CPU(at::kFloat).empty({0, 0})};
 
   // the derivs w.r.t. the nnet outputs (transposed)
-  at::Tensor nnet_output_deriv_transposed_{torch::CPU_OR_CUDA(at::kFloat).empty({0, 0})};
+  at::Tensor nnet_output_deriv_transposed_{torch::CPU(at::kFloat).empty({0, 0})};
 
   // the (temporarily) alpha and (more permanently) alpha-dash probabilities;
   // dimension is (frames_per_sequence + 1) by (num-hmm-states * num-sequences +
   // num_sequences).  Note, they are not logs.  The last 'num_sequences'
   // columns, where the alpha for the state indexed 'num_hmm_states' would live,
   // are for the alpha-sums, which relates to leaky HMM.
-  at::Tensor alpha_{torch::CPU_OR_CUDA(at::kFloat).empty({0, 0})};
+  at::Tensor alpha_{torch::CPU(at::kFloat).empty({0, 0})};
 
   // the beta (also beta-dash) probabilities (rolling buffer); dimension is 2 *
   // (num-hmm-states * num-sequences + num_sequences).  [the last
   // 'num_sequences' columns are for the beta-sums, which relates to leaky HMM.]
   // Note: for efficiency and to simplify the equations, these are actually the
   // beta / tot_prob_.
-  at::Tensor beta_{torch::CPU_OR_CUDA(at::kFloat).empty({0, 0})};
+  at::Tensor beta_{torch::CPU(at::kFloat).empty({0, 0})};
 
   // the total probability for each sequence, excluding the product of
   // correction terms.  [the correction terms refer to the fact that we multiply
   // on each frame by 1/alpha of hmm-state 0 of the previous frame.].
   // After the correction terms the total probability is fairly close to 1,
   // which is why we can store it as non-log.
-  at::Tensor tot_prob_{torch::CPU_OR_CUDA(at::kFloat).empty({0})};
+  at::Tensor tot_prob_{torch::CPU(at::kFloat).empty({0})};
 
   // the log of tot_prob_.
-  at::Tensor tot_log_prob_{torch::CPU_OR_CUDA(at::kFloat).empty({0})};
+  at::Tensor tot_log_prob_{torch::CPU(at::kFloat).empty({0})};
 
   // the log of the total correction term for each sequence, which is the
   // product of the alpha-sums [used in the leaky-hmm computation] over all the
   // frames.  The 'correction terms' are terms that we divide the alphas and
   // betas by in order to keep them in a good dynamic range.  The product of
   // them must be included in the total likelihood.
-  at::Tensor log_correction_term_{torch::CPU_OR_CUDA(at::kFloat).empty({0})};
+  at::Tensor log_correction_term_{torch::CPU(at::kFloat).empty({0})};
 
   bool ok_;
 };

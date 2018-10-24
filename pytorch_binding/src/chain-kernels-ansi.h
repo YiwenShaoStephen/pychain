@@ -28,36 +28,36 @@
 enum { kThresholdingPowerOfTwo = 14 };
 
 #if HAVE_CUDA == 1
-//extern "C" {
+extern "C" {
   
-  template <typename scalar_t>
+//template <typename scalar_t>
   void cuda_chain_hmm_backward(dim3 Gr, dim3 Bl,
                                const int32_cuda *forward_transition_indices,
                                const int32_cuda *forward_transitions,
-			       const scalar_t *forward_transition_probs,
+			       const BaseFloat *forward_transition_probs,
                                int32_cuda num_sequences,
                                int32_cuda num_hmm_states,
-                               const scalar_t *probs,
+                               const BaseFloat *probs,
                                int32_cuda prob_stride,
-                               const scalar_t *this_alpha,
-                               const scalar_t *next_beta,
-                               scalar_t *this_beta,
-                               scalar_t *log_prob_deriv,
+                               const BaseFloat *this_alpha,
+                               const BaseFloat *next_beta,
+                               BaseFloat *this_beta,
+                               BaseFloat *log_prob_deriv,
                                int32_cuda log_prob_deriv_stride);
 
-  template <typename scalar_t>
+  //template <typename BaseFloat>
   void cuda_chain_hmm_forward(dim3 Gr, dim3 Bl,
                               const int32_cuda *backward_transition_indices,
                               const int32_cuda *backward_transitions,
-			      const scalar_t *backward_transition_probs,
+			      const BaseFloat *backward_transition_probs,
                               int32_cuda num_sequences,
                               int32_cuda num_hmm_states,
-                              const scalar_t *probs,
+                              const BaseFloat *probs,
                               int32_cuda prob_stride,
-                              const scalar_t *prev_alpha,
-                              scalar_t *this_alpha);
+                              const BaseFloat *prev_alpha,
+                              BaseFloat *this_alpha);
 
-//} // extern "C"
+} // extern "C"
 
 #endif  // HAVE_CUDA
 

@@ -51,7 +51,7 @@ class DenominatorGraph {
   // Initialize from epsilon-free acceptor FST with pdf-ids plus one as the
   // labels.  'num_pdfs' is only needeed for checking.
   DenominatorGraph(const fst::StdVectorFst &fst,
-                   int32 num_pdfs);
+                   int32 num_pdfs, bool is_cuda);
 
   const at::Tensor &ForwardTransitions() const { return forward_transitions_; }
   const at::Tensor &ForwardTransitionProbs() const { return forward_transition_probs_; }
@@ -103,33 +103,33 @@ class DenominatorGraph {
   // HMM states.
   // The first column corresponds to the end state of the transition
   // The second column corresponds to the pdf-id of the transition
-  at::Tensor forward_transitions_{torch::CPU_OR_CUDA(at::kInt).zeros({0, 0})};
+  at::Tensor forward_transitions_{torch::CPU(at::kInt).zeros({0, 0})};
   // FloatTensor of size num-transitions storing the probabilities of the 
   // transitions corresonding to forward_transitions_.
-  at::Tensor forward_transition_probs_{torch::CPU_OR_CUDA(at::kFloat).zeros({0})};
+  at::Tensor forward_transition_probs_{torch::CPU(at::kFloat).zeros({0})};
   // IntTensor of size num-states x 2 storing the begin and end indices
   // in forward_transitions_ corresponding to the transitions into each HMM
   // state.
   // The first column corresponds to the begin index.
   // The second column corresponds to the end index.
-  at::Tensor forward_transition_indices_{torch::CPU_OR_CUDA(at::kInt).zeros({0, 0})};
+  at::Tensor forward_transition_indices_{torch::CPU(at::kInt).zeros({0, 0})};
 
   // IntTensor of size num-transitions x 2 storing the transitions into 
   // HMM states.
   // The first column corresponds to the end state of the transition
   // The second column corresponds to the pdf-id of the transition
-  at::Tensor backward_transitions_{torch::CPU_OR_CUDA(at::kInt).zeros({0, 0})};
+  at::Tensor backward_transitions_{torch::CPU(at::kInt).zeros({0, 0})};
 
   // FloatTensor of size num-transitions storing the probabilities of the 
   // transitions corresponding to backward_transitions_.
-  at::Tensor backward_transition_probs_{torch::CPU_OR_CUDA(at::kFloat).zeros({0})};
+  at::Tensor backward_transition_probs_{torch::CPU(at::kFloat).zeros({0})};
 
   // IntTensor of size num-states x 2 storing the begin and end indices
   // in backward_transitions_ corresponding to the transitions into each HMM
   // state.
   // The first column corresponds to the begin index.
   // The second column corresponds to the end index.
-  at::Tensor backward_transition_indices_{torch::CPU_OR_CUDA(at::kInt).zeros({0, 0})};
+  at::Tensor backward_transition_indices_{torch::CPU(at::kInt).zeros({0, 0})};
 
   // The initial-probability of all states, used on the first frame of a
   // sequence [although we also apply the constraint that on the first frame,
@@ -137,7 +137,7 @@ class DenominatorGraph {
   // active.  Because in general sequences won't start at the start of files, we
   // make this a generic probability distribution close to the limiting
   // distribution of the HMM.  This isn't too critical.
-  at::Tensor initial_probs_{torch::CPU_OR_CUDA(at::kFloat).zeros({0})};
+  at::Tensor initial_probs_{torch::CPU(at::kFloat).zeros({0})};
 
   int32 num_pdfs_;
 };

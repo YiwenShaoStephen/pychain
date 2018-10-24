@@ -10,7 +10,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("set_verbose_level", &SetVerboseLevel);
 
   py::class_<chain::DenominatorGraph>(m, "DenominatorGraph")
-    .def(py::init<const fst::StdVectorFst&, int32>()) 
+    .def(py::init<const fst::StdVectorFst&, int32, bool>()) 
     .def("initial_probs", &chain::DenominatorGraph::InitialProbs)
     .def("forward_transitions", &chain::DenominatorGraph::ForwardTransitions)
     .def("forward_transition_probs", &chain::DenominatorGraph::ForwardTransitionProbs)

@@ -4,10 +4,7 @@
 #define HAVE_CUDA 1
 
 #if HAVE_CUDA == 1
-#define CPU_OR_CUDA CUDA
 #define CU1DBLOCK   256
-#else
-#define CPU_OR_CUDA CPU
 #endif
 typedef int int32;
 typedef long int64;

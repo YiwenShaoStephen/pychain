@@ -26,8 +26,19 @@
 namespace chain {
 
 DenominatorGraph::DenominatorGraph(const fst::StdVectorFst &fst,
-                                   int32 num_pdfs):
+                                   int32 num_pdfs, bool is_cuda):
     num_pdfs_(num_pdfs) {
+#if HAVE_CUDA == 1
+  if (is_cuda) {
+    forward_transitions_ = torch::CUDA(at::kInt).zeros({0, 0});
+    forward_transition_probs_ = torch::CUDA(at::kFloat).zeros({0});
+    forward_transition_indices_ = torch::CUDA(at::kInt).zeros({0, 0});
+    backward_transitions_ = torch::CUDA(at::kInt).zeros({0, 0});
+    backward_transition_probs_ = torch::CUDA(at::kFloat).zeros({0});
+    backward_transition_indices_ = torch::CUDA(at::kInt).zeros({0, 0});
+    initial_probs_ = torch::CUDA(at::kFloat).zeros({0});
+  }
+#endif
   if (GetVerboseLevel() > 2)
     py::print("Before initialization, transition-probs=", forward_transition_probs_);
   SetTransitions(fst, num_pdfs);

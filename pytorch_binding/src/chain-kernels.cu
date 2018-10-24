@@ -19,6 +19,7 @@
 
 #include <cfloat>
 #include "chain-kernels-ansi.h"
+#include <stdio.h>
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200
 #error - Kaldi no longer supports CC1.x devices. Please use a newer GPU or \
@@ -100,17 +101,17 @@ __device__ inline void atomic_add_thresholded(Real* address, Real value) {
 // note that num_sequences == the number of elements in the minibatch, and we
 // insist they all have the same number of time steps.
 // note: 'probs' is indexed by sequence-index + (pdf-index * prob_stride).
-template <typename scalar_t>
+//template <typename BaseFloat>
 __global__
 static void _cuda_chain_hmm_forward(const int32_cuda *backward_transition_indices,
                                     const int32_cuda *backward_transitions,
-				    const scalar_t *backward_transition_probs,
+				    const BaseFloat *backward_transition_probs,
                                     int32_cuda num_sequences,
                                     int32_cuda num_hmm_states,
-                                    const scalar_t *probs,
+                                    const BaseFloat *probs,
                                     int32_cuda prob_stride,
-                                    const scalar_t *prev_alpha,
-                                    scalar_t *this_alpha) {
+                                    const BaseFloat *prev_alpha,
+                                    BaseFloat *this_alpha) {
   // 'backward_transitions', indexed by hmm-state, consists of [start, end]
   // indexes into the 'transitions' array.  This gives us the info for
   // transitions *into* this state.  'probs' contains the exponentiated neural
@@ -137,13 +138,13 @@ static void _cuda_chain_hmm_forward(const int32_cuda *backward_transition_indice
   const int loop_unroll = 2;  // don't change this without changing the code
                               // below.
   for (; trans_i + loop_unroll <= trans_end; trans_i += loop_unroll) {
-    scalar_t transition_prob0 = backward_transition_probs[trans_i];
+    BaseFloat transition_prob0 = backward_transition_probs[trans_i];
     int32_cuda pdf_id0 = backward_transitions[trans_i * 2 + 1],
         prev_hmm_state0 = backward_transitions[trans_i * 2];
-    scalar_t transition_prob1 = backward_transition_probs[trans_i + 1];
+    BaseFloat transition_prob1 = backward_transition_probs[trans_i + 1];
     int32_cuda pdf_id1 = backward_transitions[(trans_i + 1) * 2 + 1],
         prev_hmm_state1 = backward_transitions[(trans_i + 1) * 2];
-    scalar_t pseudo_loglike0 = probs[pdf_id0 * prob_stride + s],
+    BaseFloat pseudo_loglike0 = probs[pdf_id0 * prob_stride + s],
              this_prev_alpha0 = prev_alpha[prev_hmm_state0 * num_sequences + s],
              pseudo_loglike1 = probs[pdf_id1 * prob_stride + s],
              this_prev_alpha1 = prev_alpha[prev_hmm_state1 * num_sequences + s];
@@ -153,10 +154,10 @@ static void _cuda_chain_hmm_forward(const int32_cuda *backward_transition_indice
   }
   if (trans_i != trans_end) {
     // mop up the odd transition.
-    scalar_t transition_prob0 = backward_transition_probs[trans_i];
+    BaseFloat transition_prob0 = backward_transition_probs[trans_i];
     int32_cuda pdf_id0 = backward_transitions[trans_i * 2 + 1],
         prev_hmm_state0 = backward_transitions[trans_i * 2];
-    scalar_t pseudo_loglike0 = probs[pdf_id0 * prob_stride + s],
+    BaseFloat pseudo_loglike0 = probs[pdf_id0 * prob_stride + s],
              this_prev_alpha0 = prev_alpha[prev_hmm_state0 * num_sequences + s];
     this_tot_alpha += this_prev_alpha0 * transition_prob0 * pseudo_loglike0;
   }
@@ -170,21 +171,21 @@ static void _cuda_chain_hmm_forward(const int32_cuda *backward_transition_indice
   // range.  This won't affect the posteriors, as it's just a constant factor
   // for each frame, but when computing the total likelihood we'll need to
   // compensate for it later on.
-  scalar_t arbitrary_scale =
+  BaseFloat arbitrary_scale =
       1.0 / prev_alpha[num_hmm_states * num_sequences + s];
   this_alpha[h * num_sequences + s] = this_tot_alpha * arbitrary_scale;
 }
 
 
-template <typename scalar_t>
+//template <typename BaseFloat>
 __global__
 static void _cuda_chain_hmm_backward(const int32_cuda *forward_transition_indices,
 				     const int32_cuda *forward_transitions,
-                                     const scalar_t *forward_transition_probs,
+                                     const BaseFloat *forward_transition_probs,
                                      int32_cuda num_sequences, int32_cuda num_hmm_states,
-                                     const scalar_t *probs, int32_cuda prob_stride,
-                                     const scalar_t *this_alpha, const scalar_t *next_beta,
-                                     scalar_t *this_beta, scalar_t *log_prob_deriv,
+                                     const BaseFloat *probs, int32_cuda prob_stride,
+                                     const BaseFloat *this_alpha, const BaseFloat *next_beta,
+                                     BaseFloat *this_beta, BaseFloat *log_prob_deriv,
                                      int32_cuda log_prob_deriv_stride) {
   // 'forward_transitions', indexed by hmm-state, consists of [start, end]
   // indexes into the 'transition_info' array.  This is about the transitions
@@ -209,65 +210,65 @@ static void _cuda_chain_hmm_backward(const int32_cuda *forward_transition_indice
 
   // See where arbitrary_scale is defined in the forward computation above, for
   // more explanation of inv_arbitrary_scale.
-  scalar_t this_alpha_prob = this_alpha[h * num_sequences + s],
+  BaseFloat this_alpha_prob = this_alpha[h * num_sequences + s],
       inv_arbitrary_scale =
       this_alpha[num_hmm_states * num_sequences + s];
   double tot_variable_factor = 0.0;
 
-  scalar_t occupation_factor = this_alpha_prob / inv_arbitrary_scale;
+  BaseFloat occupation_factor = this_alpha_prob / inv_arbitrary_scale;
   int32_cuda trans_i = forward_transition_indices[h * 2],
       trans_end = forward_transition_indices[h * 2 + 1];
   const int loop_unroll = 2;  // don't change this without changing the code
                               // below.
   for (; trans_i + loop_unroll <= trans_end; trans_i += loop_unroll) {
-    scalar_t transition_prob0 = forward_transition_probs[trans_i];
+    BaseFloat transition_prob0 = forward_transition_probs[trans_i];
     int32_cuda pdf_id0 = forward_transitions[trans_i * 2 + 1],
         next_hmm_state0 = forward_transitions[trans_i * 2];
-    scalar_t transition_prob1 = forward_transition_probs[trans_i + 1];
+    BaseFloat transition_prob1 = forward_transition_probs[trans_i + 1];
     int32_cuda pdf_id1 = forward_transitions[(trans_i + 1) * 2 + 1],
         next_hmm_state1 = forward_transitions[(trans_i + 1) * 2];
-    scalar_t variable_factor0 = transition_prob0 *
+    BaseFloat variable_factor0 = transition_prob0 *
         next_beta[next_hmm_state0 * num_sequences + s] *
                     probs[pdf_id0 * prob_stride + s],
         variable_factor1 = transition_prob1 *
         next_beta[next_hmm_state1 * num_sequences + s] *
                     probs[pdf_id1 * prob_stride + s];
     tot_variable_factor += variable_factor0 + variable_factor1;
-    scalar_t occupation_prob0 = variable_factor0 * occupation_factor;
+    BaseFloat occupation_prob0 = variable_factor0 * occupation_factor;
     atomic_add_thresholded(log_prob_deriv + (pdf_id0 * log_prob_deriv_stride + s),
                            occupation_prob0);
-    scalar_t occupation_prob1 = variable_factor1 * occupation_factor;
+    BaseFloat occupation_prob1 = variable_factor1 * occupation_factor;
     atomic_add_thresholded(log_prob_deriv + (pdf_id1 * log_prob_deriv_stride + s),
                            occupation_prob1);
   }
   if (trans_i != trans_end) {
     // mop up the odd transition.
-    scalar_t transition_prob0 = forward_transition_probs[trans_i];
+    BaseFloat transition_prob0 = forward_transition_probs[trans_i];
     int32_cuda pdf_id0 = forward_transitions[trans_i * 2 + 1],
         next_hmm_state0 = forward_transitions[trans_i * 2];
-    scalar_t variable_factor0 = transition_prob0 *
+    BaseFloat variable_factor0 = transition_prob0 *
         next_beta[next_hmm_state0 * num_sequences + s] *
                       probs[pdf_id0 * prob_stride + s];
     tot_variable_factor += variable_factor0;
-    scalar_t occupation_prob0 = variable_factor0 * occupation_factor;
+    BaseFloat occupation_prob0 = variable_factor0 * occupation_factor;
     atomic_add_thresholded(log_prob_deriv + (pdf_id0 * log_prob_deriv_stride + s),
                            occupation_prob0);
   }
-  scalar_t beta = tot_variable_factor / inv_arbitrary_scale;
+  BaseFloat beta = tot_variable_factor / inv_arbitrary_scale;
   this_beta[h * num_sequences + s] = beta;
 }
 
-template <typename scalar_t>
+//template <typename BaseFloat>
 void cuda_chain_hmm_forward(dim3 Gr, dim3 Bl,
 			    const int32_cuda *backward_transition_indices,
 			    const int32_cuda *backward_transitions,
-			    const scalar_t *backward_transition_probs,
+			    const BaseFloat *backward_transition_probs,
 			    int32_cuda num_sequences,
 			    int32_cuda num_hmm_states,
-			    const scalar_t *probs,
+			    const BaseFloat *probs,
 			    int32_cuda prob_stride,
-			    const scalar_t *prev_alpha,
-			    scalar_t *this_alpha) {
+			    const BaseFloat *prev_alpha,
+			    BaseFloat *this_alpha) {
   _cuda_chain_hmm_forward<<<Gr,Bl>>>(backward_transition_indices, backward_transitions,
                                      backward_transition_probs,
 				     num_sequences, num_hmm_states,
@@ -275,21 +276,21 @@ void cuda_chain_hmm_forward(dim3 Gr, dim3 Bl,
                                      prev_alpha, this_alpha);
 }
 
-template <typename scalar_t>
+//template <typename BaseFloat>
 void cuda_chain_hmm_backward(dim3 Gr, dim3 Bl,
 			     const int32_cuda *forward_transition_indices,
 			     const int32_cuda *forward_transitions,
-			     const scalar_t *forward_transition_probs,
+			     const BaseFloat *forward_transition_probs,
 			     int32_cuda num_sequences,
 			     int32_cuda num_hmm_states,
-			     const scalar_t *probs,
+			     const BaseFloat *probs,
 			     int32_cuda prob_stride,
-			     const scalar_t *this_alpha,
-			     const scalar_t *next_beta,
-			     scalar_t *this_beta,
-			     scalar_t *log_prob_deriv,
+			     const BaseFloat *this_alpha,
+			     const BaseFloat *next_beta,
+			     BaseFloat *this_beta,
+			     BaseFloat *log_prob_deriv,
 			     int32_cuda log_prob_deriv_stride) {
-  _cuda_chain_hmm_backward<<<Gr,Bl>>>(forward_transitions, forward_transitions,
+  _cuda_chain_hmm_backward<<<Gr,Bl>>>(forward_transition_indices, forward_transitions,
 				      forward_transition_probs,
                                       num_sequences, num_hmm_states,
                                       probs, prob_stride,
