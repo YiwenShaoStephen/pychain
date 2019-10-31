@@ -1,13 +1,10 @@
-#include <torch/torch.h>
+#include <torch/extension.h>
 #include "chain-den-graph.h"
 #include "chain-training.h"
 #include "base.h"
-#include "pybind11/iostream.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  py::add_ostream_redirect(m, "ostream_redirect");
-
-  m.def("set_verbose_level", &SetVerboseLevel);
+  m.def("set_verbose_level", &SetVerboseLevel, "debug info");
 
   py::class_<chain::DenominatorGraph>(m, "DenominatorGraph")
     .def(py::init<const fst::StdVectorFst&, int32, bool>()) 

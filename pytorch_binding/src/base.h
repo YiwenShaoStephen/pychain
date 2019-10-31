@@ -1,11 +1,8 @@
 #ifndef BASE_H_
 #define BASE_H_
 
-#define HAVE_CUDA 1
-
-#if HAVE_CUDA == 1
 #define CU1DBLOCK   256
-#endif
+
 typedef int int32;
 typedef long int64;
 typedef float BaseFloat;

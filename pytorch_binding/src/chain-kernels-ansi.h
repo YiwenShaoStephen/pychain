@@ -20,14 +20,12 @@
 
 #ifndef KALDI_CHAIN_CHAIN_KERNELS_ANSI_H_
 #define KALDI_CHAIN_CHAIN_KERNELS_ANSI_H_
-#include <ATen/ATen.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "base.h"
 
 enum { kThresholdingPowerOfTwo = 14 };
 
-#if HAVE_CUDA == 1
 extern "C" {
   
 //template <typename scalar_t>
@@ -58,8 +56,6 @@ extern "C" {
                               BaseFloat *this_alpha);
 
 } // extern "C"
-
-#endif  // HAVE_CUDA
 
 
 #endif  // KALDI_CHAIN_CHAIN_KERNELS_ANSI_H_

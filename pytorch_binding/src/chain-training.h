@@ -54,11 +54,11 @@ struct ChainTrainingOptions {
                           xent_regularize(0.0) { }
 };
 
-at::Tensor ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
+torch::Tensor ComputeObjfAndDeriv(const ChainTrainingOptions &opts,
 			       const DenominatorGraph &den_graph,
 			       int32 num_sequences,
-			       at::Tensor nnet_output,
-			       at::Tensor nnet_output_deriv);
+			       torch::Tensor nnet_output,
+			       torch::Tensor nnet_output_deriv);
 
 }  // namespace chain
 

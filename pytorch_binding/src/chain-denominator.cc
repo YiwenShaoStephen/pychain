@@ -27,26 +27,25 @@ DenominatorComputation::DenominatorComputation(
     const ChainTrainingOptions &opts,
     const DenominatorGraph &den_graph,
     int32 num_sequences,
-    at::Tensor nnet_output):
+    torch::Tensor nnet_output):
     opts_(opts),
     den_graph_(den_graph),
     num_sequences_(num_sequences),
     frames_per_sequence_(nnet_output.size(0) / num_sequences_),
     ok_(true) {
 
+  cuda_ = nnet_output.type().is_cuda();
   int32 alpha_beta_size = den_graph_.NumStates() * num_sequences_;
 
-#if HAVE_CUDA == 1
-  if (nnet_output.is_cuda()) {
-    nnet_output_deriv_transposed_ = torch::CUDA(at::kFloat).empty({0, 0});
-    alpha_ = torch::CUDA(at::kFloat).empty({0, 0});
-    beta_ = torch::CUDA(at::kFloat).empty({0, 0});
-    tot_prob_ = torch::CUDA(at::kFloat).empty({0, 0});
-    tot_log_prob_ = torch::CUDA(at::kFloat).empty({0, 0});
-    log_correction_term_ = torch::CUDA(at::kFloat).empty({0, 0});
-    exp_nnet_output_transposed_ = torch::CUDA(at::kFloat).empty({0, 0});
+  if(cuda_) {
+    nnet_output_deriv_transposed_ = nnet_output_deriv_transposed_.cuda();
+    alpha_ = alpha_.cuda();
+    beta_ = beta_.cuda();
+    tot_prob_ = tot_prob_.cuda();
+    tot_log_prob_ = tot_log_prob_.cuda();
+    log_correction_term_ = log_correction_term_.cuda();
+    exp_nnet_output_transposed_ = exp_nnet_output_transposed_.cuda();
   }
-#endif
   nnet_output_deriv_transposed_.resize_({nnet_output.size(1),
     std::min<int32>(nnet_output.size(0),
                     static_cast<int32>(kMaxDerivTimeSteps) *
@@ -86,17 +85,17 @@ DenominatorComputation::DenominatorComputation(
 
 
 void DenominatorComputation::AlphaFirstFrame() {
-  at::Tensor first_frame_alpha = alpha_.narrow(0, 0, 1).squeeze();
+  torch::Tensor first_frame_alpha = alpha_.narrow(0, 0, 1).squeeze();
   // dim == num_hmm_states_ * num_sequences_.
   // 0th row
   // create a 'fake matrix' - view this row as a matrix
   // num_hmm_states_ x num_sequences_.
   // initializer takes [pointer, num-rows, num-cols, stride].
-  at::Tensor alpha_mat = first_frame_alpha
+  torch::Tensor alpha_mat = first_frame_alpha
     .narrow(0, 0, den_graph_.NumStates() * num_sequences_)
     .view({den_graph_.NumStates(), num_sequences_});
 
-  at::Tensor init_probs = den_graph_.InitialProbs().expand(
+  torch::Tensor init_probs = den_graph_.InitialProbs().expand(
       {num_sequences_, den_graph_.NumStates()}).transpose(0, 1);
 
   alpha_mat.copy_(init_probs);
@@ -111,22 +110,21 @@ void DenominatorComputation::AlphaFirstFrame() {
 void DenominatorComputation::AlphaGeneralFrame(int32 t) {
   assert(t > 0 && t <= frames_per_sequence_);
   // Rows t and t-1 of alpha
-  at::Tensor this_alpha = alpha_.narrow(0, t, 1).squeeze();
-  at::Tensor prev_alpha_dash = alpha_.narrow(0, t - 1, 1).squeeze();
+  torch::Tensor this_alpha = alpha_.narrow(0, t, 1).squeeze();
+  torch::Tensor prev_alpha_dash = alpha_.narrow(0, t - 1, 1).squeeze();
 
-  at::Tensor backward_transition_indices = den_graph_.BackwardTransitionIndices();
-  at::Tensor backward_transitions = den_graph_.BackwardTransitions();
-  at::Tensor backward_transition_probs = den_graph_.BackwardTransitionProbs();
+  torch::Tensor backward_transition_indices = den_graph_.BackwardTransitionIndices();
+  torch::Tensor backward_transitions = den_graph_.BackwardTransitions();
+  torch::Tensor backward_transition_probs = den_graph_.BackwardTransitionProbs();
 
   int32 num_hmm_states = den_graph_.NumStates(),
       num_sequences = num_sequences_;
 
   // 'probs' is the matrix of pseudo-likelihoods for frame t - 1.
-  at::Tensor probs = exp_nnet_output_transposed_.narrow(
+  torch::Tensor probs = exp_nnet_output_transposed_.narrow(
       1, (t - 1) * num_sequences_, num_sequences_);
 
-#if HAVE_CUDA == 1
-  if (probs.is_cuda()) {
+  if (cuda_) {
     dim3 dimBlock(std::min<int32>(CU1DBLOCK, num_sequences), 1, 1);
     dim3 dimGrid(n_blocks(num_sequences, dimBlock.x), num_hmm_states, 1);
 
@@ -171,7 +169,6 @@ void DenominatorComputation::AlphaGeneralFrame(int32 t) {
     }
     //CuDevice::Instantiate().AccuProfile(__func__, tim);
   } else
-#endif
   {
     auto probs_a = probs.accessor<BaseFloat, 2>();
     auto this_alpha_a = this_alpha.accessor<BaseFloat, 1>();
@@ -211,20 +208,18 @@ void DenominatorComputation::AlphaGeneralFrame(int32 t) {
 
 void DenominatorComputation::AlphaDash(int32 t) {
   // Row t of alpha_ as a vector of size num_hmm_states_ x (num_sequences_ + 1)
-  at::Tensor this_alpha = alpha_.narrow(0, t, 1).squeeze();
-
+  torch::Tensor this_alpha = alpha_.narrow(0, t, 1).squeeze();
   // create a 'fake matrix' for the regular alphas- view this row as a matrix.
   // initializer takes [pointer, num-rows, num-cols, stride].
-  at::Tensor alpha_mat = this_alpha
+  torch::Tensor alpha_mat = this_alpha
     .narrow(0, 0, den_graph_.NumStates() * num_sequences_)
     .view({den_graph_.NumStates(), num_sequences_});
 
   // Last part of this_alpha stores the sum of alpha over all states
-  at::Tensor alpha_sum_vec = this_alpha
+  torch::Tensor alpha_sum_vec = this_alpha
     .narrow(0, den_graph_.NumStates() * num_sequences_, num_sequences_);
   // the alpha-dash is the sum of alpha over all states.
- 
-  alpha_sum_vec.copy_(at::sum(alpha_mat, 0));
+  alpha_sum_vec.copy_(torch::sum(alpha_mat, 0));
 
   //alpha_mat.AddVecVec(opts_.leaky_hmm_coefficient,
   //                    den_graph_.InitialProbs(),
@@ -236,20 +231,20 @@ void DenominatorComputation::AlphaDash(int32 t) {
 
 // compute beta from beta-dash.
 void DenominatorComputation::Beta(int32 t) {
-  at::Tensor this_beta_dash = beta_.narrow(0, t % 2, 1).squeeze();
+  torch::Tensor this_beta_dash = beta_.narrow(0, t % 2, 1).squeeze();
   
   int32 this_beta_size = den_graph_.NumStates() * num_sequences_;
 
   // create a 'fake matrix' for the regular beta-dash (which is
   // the counterpart of alpha-dash)- view this row as a matrix.
   // initializer takes [pointer, num-rows, num-cols, stride].
-  at::Tensor beta_dash_mat = this_beta_dash
+  torch::Tensor beta_dash_mat = this_beta_dash
     .narrow(0, 0, this_beta_size)
     .view({den_graph_.NumStates(), num_sequences_});
 
   // making the t index implicit, the beta-dash-sum for each sequence is the sum
   // over all states i of beta_i * opts_.leaky_hmm_coefficient * initial_prob_i.
-  at::Tensor beta_dash_sum_vec = this_beta_dash
+  torch::Tensor beta_dash_sum_vec = this_beta_dash
     .narrow(0, this_beta_size, num_sequences_).squeeze();
 
   beta_dash_sum_vec.addmv_(
@@ -264,7 +259,7 @@ void DenominatorComputation::Beta(int32 t) {
       .expand({den_graph_.NumStates(), num_sequences_}));
 }
 
-at::Tensor DenominatorComputation::Forward() {
+torch::Tensor DenominatorComputation::Forward() {
   AlphaFirstFrame();
   AlphaDash(0);
   for (int32 t = 1; t <= frames_per_sequence_; t++) {
@@ -274,24 +269,24 @@ at::Tensor DenominatorComputation::Forward() {
   return ComputeTotLogLike();
 }
 
-at::Tensor DenominatorComputation::ComputeTotLogLike() {
+torch::Tensor DenominatorComputation::ComputeTotLogLike() {
   tot_prob_.resize_({num_sequences_});
 
   int32 alpha_size = den_graph_.NumStates() * num_sequences_;
 
   // View the last alpha-dash as a matrix of size num-hmm-states by num-sequences.
-  at::Tensor last_alpha_dash = alpha_
+  torch::Tensor last_alpha_dash = alpha_
     .narrow(0, frames_per_sequence_, 1).squeeze()
     .narrow(0, 0, alpha_size)
     .view({den_graph_.NumStates(), num_sequences_});
 
   // tot_prob_.AddRowSumMat(1.0, last_alpha_dash, 0.0);
-  tot_prob_.copy_(at::sum(last_alpha_dash, 0));
+  tot_prob_.copy_(torch::sum(last_alpha_dash, 0));
 
   // we should probably add an ApplyLog() function that takes a vector argument.
   tot_log_prob_.resize_as_(tot_prob_);
   tot_log_prob_.copy_(tot_prob_.log());
-  at::Tensor tot_log_prob = tot_log_prob_.sum();
+  torch::Tensor tot_log_prob = tot_log_prob_.sum();
 
   // We now have to add something for the arbitrary scaling factor.  [note: the
   // purpose of the arbitrary scaling factors was to keep things in a good
@@ -305,17 +300,17 @@ at::Tensor DenominatorComputation::ComputeTotLogLike() {
   // CuSubMatrix<BaseFloat> inv_arbitrary_scales(
   //     alpha_, 0, frames_per_sequence_,
   //     num_sequences_ * num_hmm_states, num_sequences_);
-  at::Tensor inv_arbitrary_scales = 
+  torch::Tensor inv_arbitrary_scales = 
     alpha_.narrow(1, alpha_size, num_sequences_);
-  at::Tensor log_inv_arbitrary_scales = at::empty_like(inv_arbitrary_scales);
+  torch::Tensor log_inv_arbitrary_scales = torch::empty_like(inv_arbitrary_scales);
   log_inv_arbitrary_scales.copy_(inv_arbitrary_scales.log());
-  at::Tensor log_inv_arbitrary_scales_product = log_inv_arbitrary_scales.sum();
+  torch::Tensor log_inv_arbitrary_scales_product = log_inv_arbitrary_scales.sum();
   return tot_log_prob.add(log_inv_arbitrary_scales_product);
 }
 
 
 
-bool DenominatorComputation::Backward(at::Tensor nnet_output_deriv) {
+bool DenominatorComputation::Backward(torch::Tensor nnet_output_deriv) {
   BetaDashLastFrame();
   Beta(frames_per_sequence_);
   for (int32 t = frames_per_sequence_ - 1; t >= 0; t--) {
@@ -333,7 +328,7 @@ bool DenominatorComputation::Backward(at::Tensor nnet_output_deriv) {
       //    nnet_output_deriv_transposed_,
       //    0, num_pdfs,
       //    0, chunk_frames * num_sequences_);
-      at::Tensor transposed_deriv_part = 
+      torch::Tensor transposed_deriv_part = 
         nnet_output_deriv_transposed_
         .narrow(1, 0, chunk_frames * num_sequences_);
 
@@ -342,7 +337,7 @@ bool DenominatorComputation::Backward(at::Tensor nnet_output_deriv) {
       //    t * num_sequences_, chunk_frames * num_sequences_,
       //    0, num_pdfs);
       //output_deriv_part.AddMat(deriv_weight, transposed_deriv_part, kTrans);
-      at::Tensor output_deriv_part = nnet_output_deriv
+      torch::Tensor output_deriv_part = nnet_output_deriv
         .narrow(0, t * num_sequences_, chunk_frames * num_sequences_);
       output_deriv_part.add_(transposed_deriv_part.transpose(0, 1));
       if (t != 0)
@@ -358,18 +353,18 @@ void DenominatorComputation::BetaDashLastFrame() {
   // 1/(tot-prob) factor in order to simplify the backprop.
 
   int32 t = frames_per_sequence_;
-  at::Tensor last_frame_beta_dash = beta_.narrow(0, t % 2, 1).squeeze();
+  torch::Tensor last_frame_beta_dash = beta_.narrow(0, t % 2, 1).squeeze();
 
   // create a 'fake matrix' - view this row as a matrix.
   //CuSubMatrix<BaseFloat> beta_dash_mat(last_frame_beta_dash,
   //                                     den_graph_.NumStates(),
   //                                     num_sequences_,
   //                                     num_sequences_);
-  at::Tensor beta_dash_mat = last_frame_beta_dash
+  torch::Tensor beta_dash_mat = last_frame_beta_dash
     .narrow(0, 0, den_graph_.NumStates() * num_sequences_)
     .view({den_graph_.NumStates(), num_sequences_});
 
-  at::Tensor inv_tot_prob = at::ones_like(tot_prob_);
+  torch::Tensor inv_tot_prob = torch::ones_like(tot_prob_);
   inv_tot_prob.div_(tot_prob_);
   // the beta values at the end of the file only vary with the sequence-index,
   // not with the HMM-index.  We treat all states as having a final-prob of one.
@@ -385,43 +380,28 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
   // matrix, storing only chunks of frames at a time, and we add it to the
   // non-transposed output whenever we finish a chunk.
   int32 t_wrapped = t % static_cast<int32>(kMaxDerivTimeSteps);
-  at::Tensor this_alpha_dash = alpha_.narrow(0, t, 1).squeeze(),
+  torch::Tensor this_alpha_dash = alpha_.narrow(0, t, 1).squeeze(),
     next_beta = beta_.narrow(0, (t + 1) % 2, 1).squeeze(),
     this_beta_dash = beta_.narrow(0, t % 2, 1).squeeze();
 
-  at::Tensor forward_transition_indices = den_graph_.ForwardTransitionIndices(),
+  torch::Tensor forward_transition_indices = den_graph_.ForwardTransitionIndices(),
     forward_transitions = den_graph_.ForwardTransitions(),
     forward_transition_probs = den_graph_.ForwardTransitionProbs();
 
   // 'probs' is the matrix of pseudo-likelihoods for frame t.
-  at::Tensor probs = exp_nnet_output_transposed_
+  torch::Tensor probs = exp_nnet_output_transposed_
     .narrow(1, t * num_sequences_, num_sequences_);
-  at::Tensor log_prob_deriv = nnet_output_deriv_transposed_
+  torch::Tensor log_prob_deriv = nnet_output_deriv_transposed_
     .narrow(1, t_wrapped * num_sequences_, num_sequences_);
 
   int32 num_hmm_states = den_graph_.NumStates(),
       num_sequences = num_sequences_;
-
-#if HAVE_CUDA == 1
-  if (probs.is_cuda()) {
+  if (cuda_) {
     dim3 dimBlock(std::min<int32>(CU1DBLOCK, num_sequences), 1, 1);
     dim3 dimGrid(n_blocks(num_sequences, dimBlock.x), num_hmm_states, 1);
     while (1) {
       if (dimGrid.y > 65535)  // the hardware doesn't allow more than this.
         dimGrid.y = 65535;
-      // AT_DISPATCH_FLOATING_TYPES(probs.type(), "chain_hmm_backward", ([&] {
-      //       cuda_chain_hmm_backward<scalar_t>(dimGrid, dimBlock, 
-      //                               forward_transition_indices.data<int32>(),
-      //                               forward_transitions.data<int32>(),
-      //                               forward_transition_probs.data<scalar_t>(),
-      //                               num_sequences, num_hmm_states,
-      //                               probs.data<scalar_t>(), probs.stride(0),
-      //                               this_alpha_dash.data<scalar_t>(), 
-      //                               next_beta.data<scalar_t>(),
-      //                               this_beta_dash.data<scalar_t>(),
-      //                               log_prob_deriv.data<scalar_t>(),
-      //                               log_prob_deriv.stride(0));
-      //       }));
       cuda_chain_hmm_backward(dimGrid, dimBlock, 
 			      forward_transition_indices.data<int32>(),
 			      forward_transitions.data<int32>(),
@@ -456,7 +436,6 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
       }
     }
   } else
-#endif
   {
     auto probs_a = probs.accessor<BaseFloat, 2>();
     auto log_prob_deriv_a = log_prob_deriv.accessor<BaseFloat, 2>();
@@ -475,7 +454,7 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
         double tot_variable_factor = 0.0;
         BaseFloat occupation_factor = this_alpha_dash_prob /
             inv_arbitrary_scale;
-        
+
         for (int32 trans_i = transition_indices_a[h][0]; 
              trans_i != transition_indices_a[h][1]; trans_i++) {
           BaseFloat transition_prob = transition_probs_a[trans_i];
@@ -486,7 +465,7 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
               probs_a[pdf_id][s];
           tot_variable_factor += variable_factor;
           BaseFloat occupation_prob = variable_factor * occupation_factor;
-          log_prob_deriv_a[pdf_id][s] += occupation_prob;
+	  log_prob_deriv_a[pdf_id][s] += occupation_prob;
         }
         this_beta_dash_a[h * num_sequences + s] =
             tot_variable_factor / inv_arbitrary_scale;
@@ -498,24 +477,24 @@ void DenominatorComputation::BetaDashGeneralFrame(int32 t) {
 void DenominatorComputation::BetaGeneralFrameDebug(int32 t) {
   BaseFloat num_hmm_states = den_graph_.NumStates(),
       alpha_beta_size = num_hmm_states * num_sequences_;
-  at::Tensor this_alpha_dash = alpha_.narrow(0, t, 1).squeeze()
+  torch::Tensor this_alpha_dash = alpha_.narrow(0, t, 1).squeeze()
     .narrow(0, 0, alpha_beta_size);
-  at::Tensor this_beta_dash = beta_.narrow(0, t % 2, 1).squeeze()
+  torch::Tensor this_beta_dash = beta_.narrow(0, t % 2, 1).squeeze()
     .narrow(0, 0, alpha_beta_size);
-  
+
   int32 t_wrapped = t % static_cast<int32>(kMaxDerivTimeSteps);
 
-  at::Tensor this_log_prob_deriv = nnet_output_deriv_transposed_
+  torch::Tensor this_log_prob_deriv = nnet_output_deriv_transposed_
     .narrow(1, t_wrapped * num_sequences_, num_sequences_);
-  
-  BaseFloat alpha_beta_product = at::Scalar(at::dot(this_alpha_dash, this_beta_dash)).toFloat(),
-      this_log_prob_deriv_sum = at::Scalar(this_log_prob_deriv.sum()).toFloat();
+
+  BaseFloat alpha_beta_product = torch::dot(this_alpha_dash, this_beta_dash).cpu().data<BaseFloat>()[0],
+    this_log_prob_deriv_sum = this_log_prob_deriv.sum().cpu().data<BaseFloat>()[0];
 
   if (!ApproxEqual(alpha_beta_product, num_sequences_)) {
     std::cerr  << "On time " << t << ", alpha-beta product "
                << alpha_beta_product << " != " << num_sequences_
-               << " alpha-dash-sum = " << at::sum(this_alpha_dash)
-               << ", beta-dash-sum = " << at::sum(this_beta_dash)
+               << " alpha-dash-sum = " << torch::sum(this_alpha_dash)
+               << ", beta-dash-sum = " << torch::sum(this_beta_dash)
                << std::endl;
     if (fabs(alpha_beta_product - num_sequences_) > 2.0) {
       std::cerr << "Excessive error detected, will abandon this minibatch"

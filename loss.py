@@ -7,8 +7,9 @@ import pychain
 class ChainFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, training_opts, den_graph, batch_size):
-        input_grad = torch.zeros_like(input) # initialize it in python to save memory
-                                             # when we add grad from numerator
+        # initialize it in python to save memory
+        input_grad = torch.zeros_like(input)
+        # when we add grad from numerator
         objf = pychain.compute_objf_and_deriv(
             training_opts, den_graph, batch_size, input, input_grad)
         ctx.save_for_backward(input_grad)
@@ -44,16 +45,17 @@ if __name__ == "__main__":
     B = 10
     T = 100
 
-    pychain.set_verbose_level(4)
-    nnet_output = torch.zeros(T, B, D).cuda()
+    pychain.set_verbose_level(0)
+    nnet_output = torch.zeros(T, B, D)  # .cuda()
     nnet_output.requires_grad = True
 
-    criterion = ChainLoss("./den.fst", D, True)
+    criterion = ChainLoss(
+        "/export/a16/vmanoha1/pychain/tests/den.fst", D)
 
     start_time = time.time()
     obj = criterion(nnet_output)
     obj.backward()
     elapsed_time = time.time() - start_time
     print(elapsed_time)
-    print(nnet_output.grad)
+    # print(nnet_output.grad)
     print(obj)
