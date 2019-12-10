@@ -7,7 +7,7 @@ regular version of LF-MMI.
 ## Installation
 
 ### Setup OpenFst
-1. Download and install [OpenFST](http://www.openfst.org/twiki/bin/view/FST/FstDownload)\
+1. Download and install [OpenFST](http://www.openfst.org/twiki/bin/view/FST/FstDownload)
 * Install it by:
 ```bash
 ./configure --prefix=`pwd` --enable-static --enable-shared --enable-ngram-fsts CXX="g++" LIBS="-ldl" CPPFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0"
