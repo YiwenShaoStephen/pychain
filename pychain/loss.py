@@ -49,7 +49,7 @@ class ChainFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, objf_grad):
         input_grad, = ctx.saved_tensors
-        torch.mul(input_grad, objf_grad)
+        input_grad = torch.mul(input_grad, objf_grad)
         return input_grad, None
 
 

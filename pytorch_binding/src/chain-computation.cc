@@ -78,8 +78,8 @@ void ChainComputation::AlphaFirstFrame() {
 }
 
 void ChainComputation::AlphaSum(int t) {
-  auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze();
-  auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze();
+  auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1);
+  auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(2).squeeze(1);
   this_alpha_tot.copy_(this_alpha.sum(1));
 }
 
@@ -110,10 +110,10 @@ void ChainComputation::AlphaGeneralFrame(int t) {
   } else
   {
     // Rows t and t-1 of alpha
-    torch::Tensor this_alpha = alpha_.narrow(1, t, 1).squeeze();
-    torch::Tensor prev_alpha = alpha_.narrow(1, t - 1, 1).squeeze();
+    torch::Tensor this_alpha = alpha_.narrow(1, t, 1).squeeze(1);
+    torch::Tensor prev_alpha = alpha_.narrow(1, t - 1, 1).squeeze(1);
     // 'probs' is the matrix of pseudo-likelihoods for frame t - 1.
-    torch::Tensor probs = exp_nnet_output_.narrow(1, t - 1, 1).squeeze();
+    torch::Tensor probs = exp_nnet_output_.narrow(1, t - 1, 1).squeeze(1);
     auto probs_a = probs.accessor<float, 2>();
     auto this_alpha_a = this_alpha.accessor<float, 2>();
     auto prev_alpha_a = prev_alpha.accessor<float, 2>();
@@ -163,7 +163,7 @@ torch::Tensor ChainComputation::Forward() {
 
 torch::Tensor ChainComputation::ComputeTotLogLike() {
 
-  torch::Tensor alpha_frame_log_tot = alpha_.narrow(2, num_states_, 1).squeeze().log();
+  torch::Tensor alpha_frame_log_tot = alpha_.narrow(2, num_states_, 1).squeeze(2).log();
   
   tot_log_prob_.copy_(torch::sum(alpha_frame_log_tot, 1));
   tot_prob_.copy_(tot_log_prob_.exp());
@@ -179,10 +179,10 @@ void ChainComputation::BetaLastFrame() {
   // not with the HMM-index.  We treat all states as having a final-prob of one.
 
   torch::Tensor last_frame_beta = beta_.narrow(1, num_frames_ % 2, 1)
-    .narrow(2, 0, num_states_).squeeze();
+    .narrow(2, 0, num_states_).squeeze(1);
 
   torch::Tensor last_frame_alpha_sum = alpha_.narrow(1, num_frames_, 1)
-    .narrow(2, num_states_, 1).squeeze();
+    .narrow(2, num_states_, 1).squeeze(2).squeeze(1);
   torch::Tensor inv_tot_prob = torch::ones_like(last_frame_alpha_sum);
   inv_tot_prob.div_(last_frame_alpha_sum);
   
@@ -214,12 +214,12 @@ void ChainComputation::BetaGeneralFrame(int t) {
 			    num_hmm_states, num_pdfs, num_transitions);
   } else
   {
-    torch::Tensor this_alpha = alpha_.narrow(1, t, 1).squeeze(),
-      next_beta = beta_.narrow(1, (t + 1) % 2, 1).squeeze(),
-      this_beta = beta_.narrow(1, t % 2, 1).squeeze();
+    torch::Tensor this_alpha = alpha_.narrow(1, t, 1).squeeze(1),
+      next_beta = beta_.narrow(1, (t + 1) % 2, 1).squeeze(1),
+      this_beta = beta_.narrow(1, t % 2, 1).squeeze(1);
     // 'probs' is the matrix of pseudo-likelihoods for frame t.
-    torch::Tensor probs = exp_nnet_output_.narrow(1, t, 1).squeeze();
-    torch::Tensor log_prob_deriv = nnet_output_deriv_.narrow(1, t, 1).squeeze();
+    torch::Tensor probs = exp_nnet_output_.narrow(1, t, 1).squeeze(1);
+    torch::Tensor log_prob_deriv = nnet_output_deriv_.narrow(1, t, 1).squeeze(1);
 
     auto probs_a = probs.accessor<float, 2>();
     auto log_prob_deriv_a = log_prob_deriv.accessor<float, 2>();
@@ -267,8 +267,8 @@ bool ChainComputation::Backward() {
 
 void ChainComputation::BetaGeneralFrameDebug(int t) {
   int num_hmm_states = num_states_;
-  torch::Tensor this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_hmm_states).squeeze(),
-    this_beta = beta_.narrow(1, t % 2, 1).narrow(2, 0, num_hmm_states).squeeze();
+  torch::Tensor this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_hmm_states).squeeze(1),
+    this_beta = beta_.narrow(1, t % 2, 1).narrow(2, 0, num_hmm_states).squeeze(1);
 
   torch::Tensor this_log_prob_deriv = nnet_output_deriv_.narrow(1, t, 1);
 
