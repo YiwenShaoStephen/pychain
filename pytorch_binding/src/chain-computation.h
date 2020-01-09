@@ -2,6 +2,7 @@
 
 // Copyright       2015  Johns Hopkins University (Author: Daniel Povey)
 //                 2019  Yiwen Shao
+//                 2020  Yiming Wang
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,8 +59,9 @@
            for (j, p, n) in pred(i):  # note: j is preceding-state.
               alpha(t, i) += x(t-1, n) * alpha(t-1, j) * p.
 
-    - total-prob = \sum_i alpha(T, i).  # note, we take the final-probs of all states
-                                        # to be 1.0.
+    - total-prob = \sum_i alpha(T, i) * final_probs(i). # note, we take the final-probs
+                                                        # of all states to be 1.0 for
+                                                        # denominator computeation.
 
   * Backward computation (version 1)
 
@@ -76,7 +78,7 @@
   w.r.t. the logs of the x(t, n) quantities), so we use gamma for that.
 
     - for the final frame:
-       for each i, beta(T, i) = 1 / total-prob.
+       for each i, beta(T, i) = final_probs(i) / total-prob.
     - for t = T-1 ... 0:
         for i = 0 ... I-1:
            beta(t, i) = 0
@@ -160,15 +162,17 @@
 class ChainComputation {
  public:
   //  Constructor
-  ChainComputation(torch::Tensor forward_transitions,
-		   torch::Tensor forward_transition_indices,
-		   torch::Tensor forward_transition_probs,
-		   torch::Tensor backward_transitions,
-		   torch::Tensor backward_transition_indices,
-		   torch::Tensor backward_transition_probs,
-		   torch::Tensor initial_probs,
-		   torch::Tensor exp_nnet_output,
-		   int num_states, float leaky_hmm_coefficient=1.0e-05);
+  ChainComputation(
+    torch::Tensor forward_transitions,
+    torch::Tensor forward_transition_indices,
+    torch::Tensor forward_transition_probs,
+    torch::Tensor backward_transitions,
+    torch::Tensor backward_transition_indices,
+    torch::Tensor backward_transition_probs,
+    torch::Tensor initial_probs,
+    torch::Tensor final_probs,
+    torch::Tensor exp_nnet_output,
+    int num_states, float leaky_hmm_coefficient=1.0e-05);
 
   // Does the forward computation, and returns the total log-like summed over
   // all sequences.  You will have to scale this by any supervision weighting
@@ -233,6 +237,10 @@ class ChainComputation {
   torch::Tensor backward_transition_indices_;
   torch::Tensor backward_transition_probs_;
   torch::Tensor initial_probs_;
+  // Dimension is (num_sequences, num-hmm-states).
+  torch::Tensor final_probs_;
+
+  bool final_probs_all_ones_; // True if all elements in final_probs_ are 1.0
   
   // The exp() of the nnet output (the exp() avoids us having to
   // exponentiate in the forward-backward).

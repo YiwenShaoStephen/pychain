@@ -2,6 +2,7 @@
 
 // Copyright      2015   Johns Hopkins University (author: Daniel Povey)
 //                2019   Yiwen Shao
+//                2020   Yiming Wang
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,15 +21,17 @@
 #include "chain-kernels-ansi.h"
 #include "base.h"
 
-ChainComputation::ChainComputation(torch::Tensor forward_transitions,
-				   torch::Tensor forward_transition_indices,
-				   torch::Tensor forward_transition_probs,
-				   torch::Tensor backward_transitions,
-				   torch::Tensor backward_transition_indices,
-				   torch::Tensor backward_transition_probs,
-				   torch::Tensor initial_probs,
-				   torch::Tensor exp_nnet_output,
-				   int num_states, float leaky_hmm_coefficient) {
+ChainComputation::ChainComputation(
+    torch::Tensor forward_transitions,
+    torch::Tensor forward_transition_indices,
+    torch::Tensor forward_transition_probs,
+    torch::Tensor backward_transitions,
+    torch::Tensor backward_transition_indices,
+    torch::Tensor backward_transition_probs,
+    torch::Tensor initial_probs,
+    torch::Tensor final_probs,
+    torch::Tensor exp_nnet_output,
+    int num_states, float leaky_hmm_coefficient) {
   
   
   cuda_ = exp_nnet_output.type().is_cuda();
@@ -45,6 +48,7 @@ ChainComputation::ChainComputation(torch::Tensor forward_transitions,
   backward_transition_indices_ = backward_transition_indices;
   backward_transition_probs_ = backward_transition_probs;
   initial_probs_ = initial_probs;
+  final_probs_ = final_probs;
 
   nnet_output_deriv_ = torch::zeros_like(exp_nnet_output);
   exp_nnet_output_ = exp_nnet_output;
@@ -70,11 +74,13 @@ ChainComputation::ChainComputation(torch::Tensor forward_transitions,
     backward_transition_indices_ = backward_transition_indices_.cuda();
     backward_transition_probs_ = backward_transition_probs_.cuda();
     initial_probs_ = initial_probs_.cuda();
+    final_probs_ = final_probs_.cuda();
     alpha_ = alpha_.cuda();
     beta_ = beta_.cuda();
     tot_prob_ = tot_prob_.cuda();
     tot_log_prob_ = tot_log_prob_.cuda();
   }
+  final_probs_all_ones_ = final_probs_.eq(1.0).all().item<bool>();
 }
 
 void ChainComputation::AlphaFirstFrame() {
@@ -86,11 +92,14 @@ void ChainComputation::AlphaFirstFrame() {
 }
 
 void ChainComputation::AlphaSum(int t) {
-  auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1);
-  auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(2).squeeze(1);
+  auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
+  auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
   this_alpha_tot.copy_(this_alpha.sum(1));
+  if (!final_probs_all_ones_ && t == num_frames_) // add final-probs for the last frame
+    this_alpha_tot.copy_(this_alpha.mul(final_probs_).sum(1));
+  else
+    this_alpha_tot.copy_(this_alpha.sum(1));
 }
-
 
 // the alpha computation for some 0 < t <= num_time_steps_.
 void ChainComputation::AlphaGeneralFrame(int t) {
@@ -194,16 +203,21 @@ void ChainComputation::BetaDashLastFrame() {
   // num_frames_).  Note that the betas we use here contain a
   // 1/(tot-prob) factor in order to simplify the backprop.
   // the beta values at the end of the file only vary with the sequence-index,
-  // not with the HMM-index.  We treat all states as having a final-prob of one.
+  // not with the HMM-index.  We treat all states as having a final-prob of one
+  // for denominator.
 
-  torch::Tensor last_frame_beta_dash = beta_.narrow(1, num_frames_ % 2, 1).squeeze(1);
+  torch::Tensor last_frame_beta_dash = beta_.narrow(1, num_frames_ % 2, 1).squeeze(1); // B x H
 
   torch::Tensor last_frame_alpha_dash_sum = alpha_.narrow(1, num_frames_, 1)
-    .narrow(2, num_states_, 1).squeeze(2).squeeze(1);
+    .narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
   torch::Tensor inv_tot_prob = torch::ones_like(last_frame_alpha_dash_sum);
   inv_tot_prob.div_(last_frame_alpha_dash_sum);
-  
-  last_frame_beta_dash.copy_(inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash));
+
+  if (final_probs_all_ones_)
+    last_frame_beta_dash.copy_(inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash));
+  else
+    last_frame_beta_dash.copy_(
+        inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash).mul(final_probs_));
 }
 
 void ChainComputation::BetaDashGeneralFrame(int t) {

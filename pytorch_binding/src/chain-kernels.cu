@@ -1,5 +1,6 @@
 // Copyright  2015  Johns Hopkins University (author: Daniel Povey)
 //            2019  Yiwen Shao
+//            2020  Yiming Wang
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
