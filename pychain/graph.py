@@ -22,7 +22,7 @@ class ChainGraph(object):
 
     def __init__(
         self, fst=None, transitions=None, transition_probs=None, num_states=None,
-        initial='simple', leaky_hmm_coefficient=1.0e-05,
+        final_probs=None, initial='simple', leaky_hmm_coefficient=1.0e-05, is_denominator=True,
     ):
         if fst:
             self.num_states = fst.num_states()
@@ -39,13 +39,17 @@ class ChainGraph(object):
              self.forward_transition_indices,
              self.backward_transitions,
              self.backward_transition_probs,
-             self.backward_transition_indices) = simplefst.StdVectorFst.fst_to_tensor(
-                 fst)
+             self.backward_transition_indices,
+             self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
+            if is_denominator:  # set final-probs to ones
+                self.final_probs = torch.ones(self.num_states, dtype=self.initial_probs.dtype)
 
         elif not (transitions is None and transition_probs is None and num_states is None):
             assert(transitions.size(0) == transition_probs.size(0))
             self.num_states = num_states
             self.initial_probs = self.simple_initial_probs
+            self.final_probs = final_probs
+            assert self.final_probs.size(0) == num_states
 
             (self.forward_transitions,
              self.forward_transition_probs,
@@ -146,6 +150,7 @@ class ChainGraphBatch(object):
             B, 1)
         self.initial_probs = graph.initial_probs
         self.num_states = graph.num_states
+        self.final_probs = graph.final_probs.repeat(B, 1)
 
     def initialized_by_list(self, graphs, max_num_transitions, max_num_states):
         transition_type = graphs[0].forward_transitions.dtype
@@ -165,6 +170,9 @@ class ChainGraphBatch(object):
             self.batch_size, max_num_states, 2, dtype=transition_type)
         self.backward_transition_probs = torch.zeros(
             self.batch_size, max_num_transitions, dtype=probs_type)
+        self.final_probs = torch.zeros(
+            self.batch_size, max_num_states, dtype=probs_type,
+        )
 
         for i in range(len(graphs)):
             graph = graphs[i]
@@ -182,6 +190,7 @@ class ChainGraphBatch(object):
                 graph.backward_transition_indices)
             self.backward_transition_probs[i, :num_transitions].copy_(
                 graph.backward_transition_probs)
+            self.final_probs[i, :num_states].copy_(graph.final_probs)
 
     def simple_initial_probs(self):
         initial_probs = torch.zeros(self.num_states)

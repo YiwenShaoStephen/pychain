@@ -56,8 +56,10 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   
   std::vector<std::vector<GraphTransition> > transitions_out_tup(num_states);
   std::vector<std::vector<GraphTransition> > transitions_in_tup(num_states);
+  std::vector<float> final_probs(num_states);
 
   for (int s = 0; s < num_states; s++) {
+    final_probs[s] = -fst.Final(s).Value();
     for (fst::ArcIterator<fst::StdVectorFst> aiter(fst, s); !aiter.Done();
          aiter.Next()) {
       const fst::StdArc &arc = aiter.Value();
@@ -121,12 +123,17 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   torch::Tensor backward_transition_probs_tensor = torch::empty({num_transitions}, torch::kFloat);
   backward_transition_probs_tensor.copy_(torch::from_blob(backward_log_probs.data(), {num_transitions}, torch::kFloat));
   backward_transition_probs_tensor.exp_();
+
+  torch::Tensor final_probs_tensor = torch::empty({num_states}, torch::kFloat);
+  final_probs_tensor.copy_(torch::from_blob(final_probs.data(), {num_states}, torch::kFloat));
+  final_probs_tensor.exp_();
   return {forward_transitions_tensor,
       forward_transition_probs_tensor,
       forward_transition_indices_tensor,
       backward_transitions_tensor,
       backward_transition_probs_tensor,
-      backward_transition_indices_tensor
+      backward_transition_indices_tensor,
+      final_probs_tensor
       };
 }
 

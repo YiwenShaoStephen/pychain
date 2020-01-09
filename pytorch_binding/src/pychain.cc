@@ -21,15 +21,17 @@
 
 #define CHECK_CONTIGUOUS(x) AT_CHECK(x.is_contiguous(), #x " must be contiguous")
 
-std::vector<torch::Tensor> ForwardBackward(torch::Tensor forward_transitions,
-					   torch::Tensor forward_transition_indices,
-					   torch::Tensor forward_transition_probs,
-					   torch::Tensor backward_transitions,
-					   torch::Tensor backward_transition_indices,
-					   torch::Tensor backward_transition_probs,
-					   torch::Tensor initial_probs,
-					   torch::Tensor exp_nnet_output,
-					   int num_states, float leaky_hmm_coefficient=1.0e-05) {
+std::vector<torch::Tensor> ForwardBackward(
+    torch::Tensor forward_transitions,
+    torch::Tensor forward_transition_indices,
+    torch::Tensor forward_transition_probs,
+    torch::Tensor backward_transitions,
+    torch::Tensor backward_transition_indices,
+    torch::Tensor backward_transition_probs,
+    torch::Tensor initial_probs,
+    torch::Tensor final_probs,
+    torch::Tensor exp_nnet_output,
+    int num_states, float leaky_hmm_coefficient=1.0e-05) {
   CHECK_CONTIGUOUS(forward_transitions);
   CHECK_CONTIGUOUS(forward_transition_indices);
   CHECK_CONTIGUOUS(forward_transition_probs);
@@ -38,17 +40,20 @@ std::vector<torch::Tensor> ForwardBackward(torch::Tensor forward_transitions,
   CHECK_CONTIGUOUS(backward_transition_probs);
   CHECK_CONTIGUOUS(initial_probs);
   CHECK_CONTIGUOUS(exp_nnet_output);
+  CHECK_CONTIGUOUS(final_probs);
   
-  ChainComputation chain(forward_transitions,
-			 forward_transition_indices,
-			 forward_transition_probs,
-			 backward_transitions,
-			 backward_transition_indices,
-			 backward_transition_probs,
-			 initial_probs,
-			 exp_nnet_output,
-			 num_states,
-             leaky_hmm_coefficient);
+  ChainComputation chain(
+      forward_transitions,
+      forward_transition_indices,
+      forward_transition_probs,
+      backward_transitions,
+      backward_transition_indices,
+      backward_transition_probs,
+      initial_probs,
+      final_probs,
+      exp_nnet_output,
+      num_states,
+      leaky_hmm_coefficient);
   
   auto obj = chain.Forward();
   chain.Backward();
