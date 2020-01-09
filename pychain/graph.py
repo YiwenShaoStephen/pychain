@@ -20,7 +20,10 @@ import simplefst
 
 class ChainGraph(object):
 
-    def __init__(self, fst=None, transitions=None, transition_probs=None, num_states=None, initial='simple'):
+    def __init__(
+        self, fst=None, transitions=None, transition_probs=None, num_states=None,
+        initial='simple', leaky_hmm_coefficient=1.0e-05,
+    ):
         if fst:
             self.num_states = fst.num_states()
             if initial == 'simple':
@@ -61,6 +64,7 @@ class ChainGraph(object):
                              'should be provided to initialize a ChainGraph')
 
         self.num_transitions = self.forward_transitions.size(0)
+        self.leaky_hmm_coefficient = leaky_hmm_coefficient
 
     def simple_initial_probs(self):
         initial_probs = torch.zeros(self.num_states)
@@ -108,6 +112,7 @@ class ChainGraphBatch(object):
                 raise ValueError(
                     "batch size should be specified to expand a single graph")
             self.batch_size = batch_size
+            self.leaky_hmm_coefficient = graphs.leaky_hmm_coefficient
             self.initialized_by_one(graphs)
         elif isinstance(graphs, (list, ChainGraph)):
             if not max_num_transitions:
@@ -117,6 +122,7 @@ class ChainGraphBatch(object):
                 raise ValueError("max_num_states should be specified if given a "
                                  "a list of ChainGraph objects to initialize from")
             self.batch_size = len(graphs)
+            self.leaky_hmm_coefficient = graphs[0].leaky_hmm_coefficient
             self.initialized_by_list(
                 graphs, max_num_transitions, max_num_states)
         else:

@@ -214,10 +214,10 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
     int pdf_id1 = forward_transitions[s * K * 3 + (trans_i + 1) * 3 + 2],
       next_hmm_state1 = forward_transitions[s * K * 3 + (trans_i + 1) * 3 + 1];
     float variable_factor0 = transition_prob0 *
-      beta[s * 2 * (H+1) + ((t+1) % 2) * (H+1) + next_hmm_state0] *
+      beta[s * 2 * H + ((t+1) % 2) * H + next_hmm_state0] *
       probs[s * T * D + t * D + pdf_id0];
     float variable_factor1 = transition_prob1 *
-      beta[s * 2 * (H+1) + ((t+1) % 2) * (H+1) + next_hmm_state1] *
+      beta[s * 2 * H + ((t+1) % 2) * H + next_hmm_state1] *
       probs[s * T * D + t * D + pdf_id1];
     tot_variable_factor += variable_factor0 + variable_factor1;
     float occupation_prob0 = variable_factor0 * occupation_factor;
@@ -233,14 +233,14 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
     int pdf_id0 = forward_transitions[s * K * 3 + trans_i * 3 + 2],
       next_hmm_state0 = forward_transitions[s * K * 3 + trans_i * 3 + 1];
     float variable_factor0 = transition_prob0 *
-      beta[s * 2 * (H+1) + ((t+1) % 2) * (H+1) + next_hmm_state0] *
+      beta[s * 2 * H + ((t+1) % 2) * H + next_hmm_state0] *
       probs[s * T * D + t * D + pdf_id0];
     tot_variable_factor += variable_factor0;
     float occupation_prob0 = variable_factor0 * occupation_factor;
     atomic_add_thresholded(log_prob_deriv + s * T * D + t * D + pdf_id0,
                            occupation_prob0);
   }
-  beta[s * 2 * (H+1) + (t%2) * (H+1) + h] = tot_variable_factor * arbitrary_scale;
+  beta[s * 2 * H + (t%2) * H + h] = tot_variable_factor * arbitrary_scale;
 }
 
 

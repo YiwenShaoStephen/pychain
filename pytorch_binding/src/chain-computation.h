@@ -104,6 +104,55 @@
   it's possible that the dominant path could have a very tiny alpha.  However,
   once we introduce the leaky-HMM idea (below), this problem will disappear.
 
+  ** Version 3 of the computation (leaky-HMM version) **
+  The leaky-HMM idea is intended to improve generalization by allowing paths
+  other than those explicitly allowed by the FST we compiled.  Another way to
+  look at it is as a way of hedging our bets about where we split the utterance,
+  so it's as we're marginalizing over different splits of the utterance.  You
+  could also think of it as a modification of the FST so that there is an
+  epsilon transition from each state to a newly added state, with probability
+  one, and then an epsilon transition from the newly added state to each state
+  with probability leaky-hmm-prob * init(i) [except we need a mechanism so that
+  no more than two epsilon transitions can be taken per frame- this would involve
+  creating two copies of the states]
+  Recall that we mentioned that init(i) is the initial-probability of
+  HMM-state i, but these are obtained in such a way that they can be treated
+  as priors, or average occupation-probabilities.
+  Anyway, the way we formulate leaky-hmm is as follows:
+  * Forward computation (version 3)
+  Let leaky-hmm-prob be a constant defined by the user, with 0.1 being a typical
+  value.  It defines how much probability we give to the 'leaky' transitions.
+  - For frame 0, set alpha(0, i) = init(i).
+  - For 0 <= t <= T, define tot-alpha(t) = \sum_i alpha(t, i).
+  - For 0 <= t <= T, define alpha'(t, i) = alpha(t, i) + tot-alpha(t) * leaky-hmm-prob * init(i).
+  - For 1 <= t <= T, the computation of alpha(t, i) is as before except we use
+      the previous frame's alpha' instead of alpha.  That is:
+           alpha(t, i) = 0
+           for (j, p, n) in pred(i):  # note: j is preceding-state.
+              alpha(t, i) += alpha'(t-1, j) * p * x(t-1, n) / tot-alpha(t-1)
+  - total-prob = \sum_i alpha'(T, i)
+  The corrected log-prob that we return from the algorithm will be
+   (total-prob + \sum_{t=0}^{T-1} \log tot-alpha(t)).
+  * Backward computation (version 3)
+  The backward computation is as follows.  It is fairly straightforward to
+  derive if you think of it as an instance of backprop where beta, tot-beta and
+  beta' are the partial derivatives of the output log-prob w.r.t. the
+  corresponding alpha, tot-alpha and alpha' quantities.  Note, tot-beta is not
+  really the sum of the betas as its name might suggest, it's just the
+  derivative w.r.t. tot-alpha.
+   - beta'(T, i) = 1 / total-prob.
+   - for 0 <= t <= T, define tot-beta(t) = leaky-hmm-prob * \sum_i init(i) * beta'(t, i)
+   - for 0 <= t <= T, define beta(t, i) = beta'(t, i) + tot-beta(t).
+   - for 0 <= t < T, we compute beta'(t, i) and update gamma(t, n) as follows:
+        for 0 <= i < I:
+           beta'(t, i) = 0
+           for (j, p, n) in foll(i):  # note: j is following-state.
+              beta'(t, i) += beta(t+1, j) * p * x(t, n) / tot-alpha(t)
+              gamma(t, n) += alpha'(t, i) * beta(t+1, j) * p *  x(t, n) / tot-alpha(t)
+   Note: in the code, the tot-alpha and tot-beta quantities go in the same
+   memory location that the corresponding alpha and beta for state I would go.
+
+
  */
 
 // This does forward-backward in parallel on a number of sequences, using a
@@ -119,7 +168,7 @@ class ChainComputation {
 		   torch::Tensor backward_transition_probs,
 		   torch::Tensor initial_probs,
 		   torch::Tensor exp_nnet_output,
-		   int num_states);
+		   int num_states, float leaky_hmm_coefficient=1.0e-05);
 
   // Does the forward computation, and returns the total log-like summed over
   // all sequences.  You will have to scale this by any supervision weighting
@@ -143,15 +192,20 @@ class ChainComputation {
   void AlphaGeneralFrame(int t);
   // sum over all alpha for frame t.
   void AlphaSum(int t);
+  // does the 'alpha-dash' computation for time t.  this relates to
+  // 'leaky hmm'.
+  void AlphaDash(int t);
 
   // done after all the alphas, this function computes and returns the total
   // log-likelihood summed over all the sequences
   torch::Tensor ComputeTotLogLike();
 
   // sets up the beta for frame t = T.
-  void BetaLastFrame();
+  void BetaDashLastFrame();
   // beta computation for 0 <= beta < num_time_steps_.
-  void BetaGeneralFrame(int t);
+  void BetaDashGeneralFrame(int t);
+  // compute the beta quantity from the beta-dash quantity (relates to leaky hmm).
+  void Beta(int t);
 
   // some checking that we can do if debug mode is activated, or on frame zero.
   // Sets ok_ to false if a bad problem is detected.
@@ -167,6 +221,10 @@ class ChainComputation {
   int num_pdfs_;
   // number of transitions
   int num_transitions_;
+  // coefficient that allows transitions from each HMM state to each other
+  // HMM state, to ensure gradual forgetting of context (can improve generalization).
+  // For numerical reasons, may not be exactly zero.
+  float leaky_hmm_coefficient_;
 
   torch::Tensor forward_transitions_;
   torch::Tensor forward_transition_indices_;
@@ -183,13 +241,16 @@ class ChainComputation {
   // the derivs w.r.t. the nnet outputs
   torch::Tensor nnet_output_deriv_;
 
+  // the (temporarily) alpha and (more permanently) alpha-dash probabilities;
   // dimension is (num-sequences, frames_per_sequence + 1, num-hmm-states + 1)
   // Note, they are not logs. alpha_[:, :, -1]
   // are for the alpha-sums.
   torch::Tensor alpha_;
 
-  // beta in rolling buffer for the backward algorithm. Dimension is
-  // (num_sequences, 2, num-hmm-states + 1))
+  // the beta (also beta-dash) probabilities (rolling buffer) for the backward
+  // algorithm. Dimension is (num_sequences, 2, num-hmm-states).
+  // Note: for efficiency and to simplify the equations, these are actually the
+  // beta / tot_prob_.
   torch::Tensor beta_;
 
   // the total probability for each sequence.
