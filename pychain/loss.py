@@ -42,7 +42,7 @@ class ChainFunction(torch.autograd.Function):
             backward_transitions,
             backward_transition_indices,
             backward_transition_probs,
-            initial_probs, exp_input, num_states)
+            initial_probs, exp_input, num_states, graphs.leaky_hmm_coefficient)
         ctx.save_for_backward(input_grad)
         return objf
 
