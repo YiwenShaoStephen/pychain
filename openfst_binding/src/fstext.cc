@@ -138,7 +138,7 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
 }
 
 
-torch::Tensor SetInitialProbs(const fst::StdVectorFst &fst) {
+torch::Tensor SetLeakyProbs(const fst::StdVectorFst &fst) {
   // we set only the start-state to have probability mass, and then 100
   // iterations of HMM propagation, over which we average the probabilities.
   // initial probs won't end up making a huge difference as we won't be using
@@ -199,6 +199,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     .def_static("read", (fst::StdVectorFst* (*)(const std::string &)) &fst::StdVectorFst::Read)
     .def_static("read_ark", &fst::ReadFstFromArk)
     .def_static("fst_to_tensor", &FstToTensor)
-    .def_static("set_initial_probs", &SetInitialProbs)
+    .def_static("set_leaky_probs", &SetLeakyProbs)
     .def("num_states", &fst::StdVectorFst::NumStates);
 }

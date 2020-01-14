@@ -34,10 +34,11 @@ class ChainFunction(torch.autograd.Function):
         backward_transitions = graphs.backward_transitions
         backward_transition_indices = graphs.backward_transition_indices
         backward_transition_probs = graphs.backward_transition_probs
-        initial_probs = graphs.initial_probs
+        leaky_probs = graphs.leaky_probs
         num_states = graphs.num_states
         final_probs = graphs.final_probs
         leaky_hmm_coefficient = graphs.leaky_hmm_coefficient
+        is_denominator = graphs.is_denominator
         objf, input_grad, _ = pychain_C.forward_backward(
             forward_transitions,
             forward_transition_indices,
@@ -45,8 +46,10 @@ class ChainFunction(torch.autograd.Function):
             backward_transitions,
             backward_transition_indices,
             backward_transition_probs,
-            initial_probs, final_probs,
-            exp_input, num_states, leaky_hmm_coefficient)
+            leaky_probs, final_probs,
+            exp_input, num_states,
+            leaky_hmm_coefficient,
+            is_denominator)
         ctx.save_for_backward(input_grad)
         return objf
 

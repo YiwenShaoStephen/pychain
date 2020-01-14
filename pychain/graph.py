@@ -23,17 +23,10 @@ class ChainGraph(object):
 
     def __init__(
         self, fst=None, transitions=None, transition_probs=None, num_states=None,
-        final_probs=None, initial='simple', leaky_hmm_coefficient=1.0e-05, is_denominator=True,
+        final_probs=None, leaky_probs=None, leaky_hmm_coefficient=1.0e-05, is_denominator=True,
     ):
         if fst:
             self.num_states = fst.num_states()
-            if initial == 'simple':
-                self.initial_probs = self.simple_initial_probs()
-            elif initial == 'recursive':
-                self.initial_probs = self.recursive_initial_probs(fst)
-            else:
-                raise ValueError(
-                    'only simple or recursive is valid for initial')
 
             (self.forward_transitions,
              self.forward_transition_probs,
@@ -42,13 +35,18 @@ class ChainGraph(object):
              self.backward_transition_probs,
              self.backward_transition_indices,
              self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
+
             if is_denominator:  # set final-probs to ones
-                self.final_probs = torch.ones(self.num_states, dtype=self.initial_probs.dtype)
+                self.leaky_probs = self.recursive_leaky_probs(fst)
+                self.final_probs = torch.ones(
+                    self.num_states, dtype=self.forward_transition_probs.dtype)
+            else:
+                self.leaky_probs = torch.ones(self.num_states)
 
         elif not (transitions is None and transition_probs is None and num_states is None):
             assert(transitions.size(0) == transition_probs.size(0))
             self.num_states = num_states
-            self.initial_probs = self.simple_initial_probs
+            self.leaky_probs = leaky_probs
             self.final_probs = final_probs
             assert self.final_probs.size(0) == num_states
 
@@ -70,15 +68,11 @@ class ChainGraph(object):
 
         self.num_transitions = self.forward_transitions.size(0)
         self.leaky_hmm_coefficient = leaky_hmm_coefficient
+        self.is_denominator = is_denominator
 
-    def simple_initial_probs(self):
-        initial_probs = torch.zeros(self.num_states)
-        initial_probs[0] = 1
-        return initial_probs
-
-    def recursive_initial_probs(self, fst):
-        initial_probs = simplefst.StdVectorFst.set_initial_probs(fst)
-        return initial_probs
+    def recursive_leaky_probs(self, fst):
+        leaky_probs = simplefst.StdVectorFst.set_leaky_probs(fst)
+        return leaky_probs
 
     def get_sorted_transitions(self, transitions, transition_probs, mode='forward'):
         if mode == 'forward':
@@ -119,6 +113,7 @@ class ChainGraphBatch(object):
             self.batch_size = batch_size
             self.leaky_hmm_coefficient = graphs.leaky_hmm_coefficient
             self.initialized_by_one(graphs)
+            self.is_denominator = graphs.is_denominator
         elif isinstance(graphs, (list, ChainGraph)):
             if not max_num_transitions:
                 raise ValueError("max_num_transitions should be specified if given a "
@@ -128,6 +123,7 @@ class ChainGraphBatch(object):
                                  "a list of ChainGraph objects to initialize from")
             self.batch_size = len(graphs)
             self.leaky_hmm_coefficient = graphs[0].leaky_hmm_coefficient
+            self.is_denominator = graphs[0].is_denominator
             self.initialized_by_list(
                 graphs, max_num_transitions, max_num_states)
         else:
@@ -149,16 +145,15 @@ class ChainGraphBatch(object):
             B, 1, 1)
         self.backward_transition_probs = graph.backward_transition_probs.repeat(
             B, 1)
-        self.initial_probs = graph.initial_probs
         self.num_states = graph.num_states
         self.final_probs = graph.final_probs.repeat(B, 1)
+        self.leaky_probs = graph.leaky_probs.repeat(B, 1)
 
     def initialized_by_list(self, graphs, max_num_transitions, max_num_states):
         transition_type = graphs[0].forward_transitions.dtype
         probs_type = graphs[0].forward_transition_probs.dtype
         self.num_states = max_num_states
         self.num_transitions = max_num_transitions
-        self.initial_probs = self.simple_initial_probs()
         self.forward_transitions = torch.zeros(
             self.batch_size, max_num_transitions, 3, dtype=transition_type)
         self.forward_transition_indices = torch.zeros(
@@ -171,6 +166,8 @@ class ChainGraphBatch(object):
             self.batch_size, max_num_states, 2, dtype=transition_type)
         self.backward_transition_probs = torch.zeros(
             self.batch_size, max_num_transitions, dtype=probs_type)
+        self.leaky_probs = torch.zeros(
+            self.batch_size, max_num_states, dtype=probs_type)
         self.final_probs = torch.zeros(
             self.batch_size, max_num_states, dtype=probs_type,
         )
@@ -191,9 +188,5 @@ class ChainGraphBatch(object):
                 graph.backward_transition_indices)
             self.backward_transition_probs[i, :num_transitions].copy_(
                 graph.backward_transition_probs)
+            self.leaky_probs[i, :num_states].copy_(graph.leaky_probs)
             self.final_probs[i, :num_states].copy_(graph.final_probs)
-
-    def simple_initial_probs(self):
-        initial_probs = torch.zeros(self.num_states)
-        initial_probs[0] = 1
-        return initial_probs

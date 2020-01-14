@@ -169,10 +169,11 @@ class ChainComputation {
     torch::Tensor backward_transitions,
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
-    torch::Tensor initial_probs,
+    torch::Tensor leaky_probs,
     torch::Tensor final_probs,
     torch::Tensor exp_nnet_output,
-    int num_states, float leaky_hmm_coefficient=1.0e-05);
+    int num_states, float leaky_hmm_coefficient=1.0e-05,
+    bool is_denominator=true);
 
   // Does the forward computation, and returns the total log-like summed over
   // all sequences.  You will have to scale this by any supervision weighting
@@ -229,6 +230,7 @@ class ChainComputation {
   // HMM state, to ensure gradual forgetting of context (can improve generalization).
   // For numerical reasons, may not be exactly zero.
   float leaky_hmm_coefficient_;
+  bool is_denominator_;
 
   torch::Tensor forward_transitions_;
   torch::Tensor forward_transition_indices_;
@@ -236,7 +238,7 @@ class ChainComputation {
   torch::Tensor backward_transitions_;
   torch::Tensor backward_transition_indices_;
   torch::Tensor backward_transition_probs_;
-  torch::Tensor initial_probs_;
+  torch::Tensor leaky_probs_;
   // Dimension is (num_sequences, num-hmm-states).
   torch::Tensor final_probs_;
 
