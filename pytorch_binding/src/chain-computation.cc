@@ -103,10 +103,6 @@ void ChainComputation::AlphaSum(int t) {
   auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
   auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
   this_alpha_tot.copy_(this_alpha.sum(1));
-  if (!final_probs_all_ones_ && t == num_frames_) // add final-probs for the last frame
-    this_alpha_tot.copy_(this_alpha.mul(final_probs_).sum(1));
-  else
-    this_alpha_tot.copy_(this_alpha.sum(1));
 }
 
 // the alpha computation for some 0 < t <= num_time_steps_.
@@ -216,16 +212,14 @@ void ChainComputation::BetaDashLastFrame() {
 
   torch::Tensor last_frame_beta_dash = beta_.narrow(1, num_frames_ % 2, 1).squeeze(1); // B x H
 
-  torch::Tensor last_frame_alpha_dash_sum = alpha_.narrow(1, num_frames_, 1)
-    .narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
+  torch::Tensor last_frame_alpha_dash = alpha_.narrow(1, num_frames_, 1)
+    .narrow(2, 0, num_states_).squeeze(1); // B x H
+  torch::Tensor last_frame_alpha_dash_sum = (last_frame_alpha_dash.mul(final_probs_).sum(1)); // B
   torch::Tensor inv_tot_prob = torch::ones_like(last_frame_alpha_dash_sum);
   inv_tot_prob.div_(last_frame_alpha_dash_sum);
 
-  if (final_probs_all_ones_)
-    last_frame_beta_dash.copy_(inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash));
-  else
-    last_frame_beta_dash.copy_(
-        inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash).mul(final_probs_));
+  last_frame_beta_dash.copy_(
+    inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash).mul(final_probs_));
 }
 
 void ChainComputation::BetaDashGeneralFrame(int t) {
