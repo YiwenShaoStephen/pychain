@@ -198,7 +198,7 @@ torch::Tensor ChainComputation::ComputeTotLogLike() {
     .narrow(2, 0, num_states_).squeeze(1); // B x H
   torch::Tensor last_frame_alpha_dash_sum = (last_frame_alpha_dash.mul(final_probs_).sum(1)); // B
   torch::Tensor alpha_frame_log_tot = alpha_.narrow(2, num_states_, 1)
-    .narrow(1, num_frames_, 1).squeeze(2).log(); // B x T
+    .narrow(1, 0, num_frames_).squeeze(2).log(); // B x T
   
   tot_log_prob_.copy_(torch::sum(alpha_frame_log_tot, 1) + last_frame_alpha_dash_sum.log());
   tot_prob_.copy_(tot_log_prob_.exp());
