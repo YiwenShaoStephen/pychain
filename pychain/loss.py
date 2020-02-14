@@ -55,16 +55,16 @@ class ChainFunction(torch.autograd.Function):
     def backward(ctx, objf_grad):
         input_grad, = ctx.saved_tensors
         input_grad = torch.mul(input_grad, objf_grad)
-        return input_grad, None
+        return input_grad, None, None
 
 
 class ChainLoss(nn.Module):
-    def __init__(self, den_graph, den_leaky_coefficient=1e-5, num_leaky_coeffcient=1e-20, avg=True):
+    def __init__(self, den_graph, den_leaky_coefficient=1e-5, num_leaky_coefficient=1e-20, avg=True):
         super(ChainLoss, self).__init__()
         self.den_graph = den_graph
         self.avg = avg
         self.den_leaky_coefficient = den_leaky_coefficient
-        self.num_leaky_coefficient = num_leaky_coeffcient
+        self.num_leaky_coefficient = num_leaky_coefficient
 
     def forward(self, x, num_graphs):
         batch_size = x.size(0)
