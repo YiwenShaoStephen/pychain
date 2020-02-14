@@ -22,7 +22,7 @@ import pychain_C
 
 class ChainFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, graphs):
+    def forward(ctx, input, graphs, leaky_coefficient):
         exp_input = input.clamp(-30, 30).exp()
         B = input.size(0)
         if B != graphs.batch_size:
@@ -37,7 +37,7 @@ class ChainFunction(torch.autograd.Function):
         leaky_probs = graphs.leaky_probs
         num_states = graphs.num_states
         final_probs = graphs.final_probs
-        leaky_hmm_coefficient = graphs.leaky_hmm_coefficient
+        leaky_coefficient = leaky_coefficient
         is_denominator = graphs.is_denominator
         objf, input_grad, _ = pychain_C.forward_backward(
             forward_transitions,
@@ -48,7 +48,7 @@ class ChainFunction(torch.autograd.Function):
             backward_transition_probs,
             leaky_probs, final_probs,
             exp_input, num_states,
-            leaky_hmm_coefficient,
+            leaky_coefficient,
             is_denominator)
         ctx.save_for_backward(input_grad)
         return objf
@@ -61,17 +61,20 @@ class ChainFunction(torch.autograd.Function):
 
 
 class ChainLoss(nn.Module):
-    def __init__(self, den_graph, avg=True):
+    def __init__(self, den_graph, den_leaky_coefficient=1e-5, num_leaky_coeffcient=1e-20, avg=True):
         super(ChainLoss, self).__init__()
         self.den_graph = den_graph
         self.avg = avg
+        self.den_leaky_coefficient = den_leaky_coefficient
+        self.num_leaky_coefficient = num_leaky_coeffcient
 
     def forward(self, x, num_graphs):
         batch_size = x.size(0)
         den_graphs = ChainGraphBatch(self.den_graph, batch_size)
         den_objf = ChainFunction.apply(
-            x, den_graphs)
-        num_objf = ChainFunction.apply(x, num_graphs)
+            x, den_graphs, self.den_leaky_coefficient)
+        num_objf = ChainFunction.apply(
+            x, num_graphs, self.num_leaky_coefficient)
         objf = -(num_objf - den_objf)
         if self.avg:
             objf = objf / (x.size(0) * x.size(1))

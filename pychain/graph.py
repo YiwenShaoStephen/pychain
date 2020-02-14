@@ -23,7 +23,7 @@ class ChainGraph(object):
 
     def __init__(
         self, fst=None, transitions=None, transition_probs=None, num_states=None,
-        final_probs=None, leaky_probs=None, leaky_hmm_coefficient=1.0e-05, is_denominator=True,
+        final_probs=None, leaky_probs=None, is_denominator=True,
     ):
         if fst:
             self.num_states = fst.num_states()
@@ -67,7 +67,6 @@ class ChainGraph(object):
                              'should be provided to initialize a ChainGraph')
 
         self.num_transitions = self.forward_transitions.size(0)
-        self.leaky_hmm_coefficient = leaky_hmm_coefficient
         self.is_denominator = is_denominator
 
     def recursive_leaky_probs(self, fst):
@@ -111,7 +110,6 @@ class ChainGraphBatch(object):
                 raise ValueError(
                     "batch size should be specified to expand a single graph")
             self.batch_size = batch_size
-            self.leaky_hmm_coefficient = graphs.leaky_hmm_coefficient
             self.initialized_by_one(graphs)
             self.is_denominator = graphs.is_denominator
         elif isinstance(graphs, (list, ChainGraph)):
@@ -122,7 +120,6 @@ class ChainGraphBatch(object):
                 raise ValueError("max_num_states should be specified if given a "
                                  "a list of ChainGraph objects to initialize from")
             self.batch_size = len(graphs)
-            self.leaky_hmm_coefficient = graphs[0].leaky_hmm_coefficient
             self.is_denominator = graphs[0].is_denominator
             self.initialized_by_list(
                 graphs, max_num_transitions, max_num_states)
