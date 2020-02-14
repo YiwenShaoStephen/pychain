@@ -23,11 +23,11 @@ class ChainGraph(object):
 
     def __init__(
         self, fst=None, transitions=None, transition_probs=None, num_states=None,
-        final_probs=None, leaky_probs=None, is_denominator=True,
-    ):
+            final_probs=None, leaky_probs=None, leaky_mode='uniform'):
         if fst:
             self.num_states = fst.num_states()
-
+            assert(leaky_mode in ['uniform', 'recursive'])
+            self.leaky_mode = leaky_mode
             (self.forward_transitions,
              self.forward_transition_probs,
              self.forward_transition_indices,
@@ -36,10 +36,8 @@ class ChainGraph(object):
              self.backward_transition_indices,
              self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
 
-            if is_denominator:  # set final-probs to ones
+            if leaky_mode == 'recursive':
                 self.leaky_probs = self.recursive_leaky_probs(fst)
-                self.final_probs = torch.ones(
-                    self.num_states, dtype=self.forward_transition_probs.dtype)
             else:
                 self.leaky_probs = torch.ones(self.num_states)
 
@@ -67,7 +65,6 @@ class ChainGraph(object):
                              'should be provided to initialize a ChainGraph')
 
         self.num_transitions = self.forward_transitions.size(0)
-        self.is_denominator = is_denominator
 
     def recursive_leaky_probs(self, fst):
         leaky_probs = simplefst.StdVectorFst.set_leaky_probs(fst)
@@ -111,7 +108,6 @@ class ChainGraphBatch(object):
                     "batch size should be specified to expand a single graph")
             self.batch_size = batch_size
             self.initialized_by_one(graphs)
-            self.is_denominator = graphs.is_denominator
         elif isinstance(graphs, (list, ChainGraph)):
             if not max_num_transitions:
                 raise ValueError("max_num_transitions should be specified if given a "
@@ -120,7 +116,6 @@ class ChainGraphBatch(object):
                 raise ValueError("max_num_states should be specified if given a "
                                  "a list of ChainGraph objects to initialize from")
             self.batch_size = len(graphs)
-            self.is_denominator = graphs[0].is_denominator
             self.initialized_by_list(
                 graphs, max_num_transitions, max_num_states)
         else:

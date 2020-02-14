@@ -31,8 +31,7 @@ ChainComputation::ChainComputation(
     torch::Tensor leaky_probs,
     torch::Tensor final_probs,
     torch::Tensor exp_nnet_output,
-    int num_states, float leaky_hmm_coefficient,
-    bool is_denominator) {
+    int num_states, float leaky_hmm_coefficient) {
   
   
   cuda_ = exp_nnet_output.type().is_cuda();
@@ -50,7 +49,6 @@ ChainComputation::ChainComputation(
   backward_transition_probs_ = backward_transition_probs;
   leaky_probs_ = leaky_probs;
   final_probs_ = final_probs;
-  is_denominator_ = is_denominator;
 
   nnet_output_deriv_ = torch::zeros_like(exp_nnet_output);
   exp_nnet_output_ = exp_nnet_output;
@@ -87,16 +85,8 @@ ChainComputation::ChainComputation(
 
 void ChainComputation::AlphaFirstFrame() {
   auto first_frame_alpha = alpha_.narrow(1, 0, 1).narrow(2, 0, num_states_);
-
-  if (is_denominator_) {
-    // the leaky_probs is used as initial probs for denominator
-    first_frame_alpha.copy_(leaky_probs_.unsqueeze(1));
-  } else {
-    // the numerator has an additional initial state 0 with initial probs of 1 and
-    // all other states with initial probs of 0
-    auto alpha_initial_state = alpha_.narrow(1, 0, 1).narrow(2, 0, 1);
-    alpha_initial_state.fill_(1.0);
-  }
+  auto alpha_initial_state = alpha_.narrow(1, 0, 1).narrow(2, 0, 1);
+  alpha_initial_state.fill_(1.0);
 }
 
 void ChainComputation::AlphaSum(int t) {
