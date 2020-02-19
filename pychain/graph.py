@@ -21,83 +21,28 @@ import simplefst
 
 class ChainGraph(object):
 
-    def __init__(
-        self, fst=None, transitions=None, transition_probs=None, num_states=None,
-            final_probs=None, leaky_probs=None, leaky_mode='uniform'):
-        if fst:
-            self.num_states = fst.num_states()
-            assert(leaky_mode in ['uniform', 'recursive'])
-            self.leaky_mode = leaky_mode
-            (self.forward_transitions,
-             self.forward_transition_probs,
-             self.forward_transition_indices,
-             self.backward_transitions,
-             self.backward_transition_probs,
-             self.backward_transition_indices,
-             self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
+    def __init__(self, fst, leaky_mode='uniform'):
+        self.num_states = fst.num_states()
+        assert(leaky_mode in ['uniform', 'recursive'])
+        self.leaky_mode = leaky_mode
+        (self.forward_transitions,
+         self.forward_transition_probs,
+         self.forward_transition_indices,
+         self.backward_transitions,
+         self.backward_transition_probs,
+         self.backward_transition_indices,
+         self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
 
-            if leaky_mode == 'recursive':
-                self.leaky_probs = self.recursive_leaky_probs(fst)
-            else:
-                self.leaky_probs = torch.ones(self.num_states)
-
-        elif not (transitions is None and transition_probs is None and num_states is None):
-            assert(transitions.size(0) == transition_probs.size(0))
-            self.num_states = num_states
-            self.leaky_probs = leaky_probs
-            self.final_probs = final_probs
-            assert self.final_probs.size(0) == num_states
-
-            (self.forward_transitions,
-             self.forward_transition_probs,
-             self.forward_transition_indices) = self.get_sorted_transitions(transitions,
-                                                                            transition_probs,
-                                                                            'forward')
-
-            (self.backward_transitions,
-             self.backward_transition_probs,
-             self.backward_transition_indices) = self.get_sorted_transitions(transitions,
-                                                                             transition_probs,
-                                                                             'backward')
-
+        if leaky_mode == 'recursive':
+            self.leaky_probs = self.recursive_leaky_probs(fst)
         else:
-            raise ValueError('either a FST object or (transitions, transition_probs and num_states)'
-                             'should be provided to initialize a ChainGraph')
+            self.leaky_probs = torch.ones(self.num_states)
 
         self.num_transitions = self.forward_transitions.size(0)
 
     def recursive_leaky_probs(self, fst):
         leaky_probs = simplefst.StdVectorFst.set_leaky_probs(fst)
         return leaky_probs
-
-    def get_sorted_transitions(self, transitions, transition_probs, mode='forward'):
-        if mode == 'forward':
-            col = 0
-        elif mode == 'backward':
-            col = 1
-        else:
-            raise ValueError('Only forward or backward is valid as mode param, but given {}'
-                             .format(mode))
-
-        order = transitions[:, col].argsort()
-        sorted_transitions = transitions[order]
-        sorted_transition_probs = transition_probs[order]
-        transition_indices = self.get_transition_indices(
-            sorted_transitions[:, col])
-        return sorted_transitions, sorted_transition_probs, transition_indices
-
-    def get_transition_indices(self, sorted_states):
-        end_point = (sorted_states[:-1] -
-                     sorted_states[1:]).nonzero().squeeze() + 1
-        preffix = torch.zeros(1, dtype=end_point.dtype)
-        suffix = torch.ones(1, dtype=end_point.dtype) * sorted_states.size(0)
-        start = torch.cat((preffix, end_point), 0)
-        end = torch.cat((end_point, suffix), 0)
-        start_end = torch.cat((start.unsqueeze(1), end.unsqueeze(1)), 1)
-        indices = torch.zeros(self.num_states, 2, dtype=start_end.dtype)
-        states_nonzero = sorted_states[start]
-        indices[states_nonzero.long()] = start_end
-        return indices
 
 
 class ChainGraphBatch(object):
