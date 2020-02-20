@@ -36,7 +36,7 @@ class ChainGraph(object):
         if leaky_mode == 'recursive':
             self.leaky_probs = self.recursive_leaky_probs(fst)
         else:
-            self.leaky_probs = torch.ones(self.num_states)
+            self.leaky_probs = torch.ones(self.num_states) / self.num_states
 
         self.num_transitions = self.forward_transitions.size(0)
 
