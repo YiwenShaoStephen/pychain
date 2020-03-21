@@ -175,5 +175,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     .def_static("read_ark", &fst::ReadFstFromArk)
     .def_static("fst_to_tensor", &FstToTensor)
     .def_static("set_leaky_probs", &SetLeakyProbs)
-    .def("num_states", &fst::StdVectorFst::NumStates);
+    .def("num_states", &fst::StdVectorFst::NumStates)
+    .def("start_state", &fst::StdVectorFst::Start);
 }

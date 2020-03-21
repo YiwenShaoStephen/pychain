@@ -30,6 +30,7 @@ ChainComputation::ChainComputation(
     torch::Tensor backward_transition_probs,
     torch::Tensor leaky_probs,
     torch::Tensor final_probs,
+    torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
     int num_states, float leaky_hmm_coefficient) {
   
@@ -49,6 +50,7 @@ ChainComputation::ChainComputation(
   backward_transition_probs_ = backward_transition_probs;
   leaky_probs_ = leaky_probs;
   final_probs_ = final_probs;
+  start_state_ = start_state;
 
   nnet_output_deriv_ = torch::zeros_like(exp_nnet_output);
   exp_nnet_output_ = exp_nnet_output;
@@ -84,9 +86,12 @@ ChainComputation::ChainComputation(
 }
 
 void ChainComputation::AlphaFirstFrame() {
-  auto first_frame_alpha = alpha_.narrow(1, 0, 1).narrow(2, 0, num_states_);
-  auto alpha_initial_state = alpha_.narrow(1, 0, 1).narrow(2, 0, 1);
-  alpha_initial_state.fill_(1.0);
+  auto start_state_a = start_state_.accessor<int, 1>();
+  for(int s = 0; s < num_sequences_; s++) {
+    int start_state_s = start_state_a[s];
+    auto alpha_initial_state = alpha_.narrow(0, s, 1).narrow(1, 0, 1).narrow(2, start_state_s, 1);
+    alpha_initial_state.fill_(1.0);
+  }
 }
 
 void ChainComputation::AlphaSum(int t) {
