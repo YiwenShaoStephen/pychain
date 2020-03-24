@@ -29,19 +29,22 @@ std::vector<torch::Tensor> ForwardBackward(
     torch::Tensor backward_transitions,
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
-    torch::Tensor initial_probs,
+    torch::Tensor leaky_probs,
     torch::Tensor final_probs,
+    torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
-    int num_states, float leaky_hmm_coefficient=1.0e-05) {
+    int num_states,
+    float leaky_hmm_coefficient=1.0e-05) {
   CHECK_CONTIGUOUS(forward_transitions);
   CHECK_CONTIGUOUS(forward_transition_indices);
   CHECK_CONTIGUOUS(forward_transition_probs);
   CHECK_CONTIGUOUS(backward_transitions);
   CHECK_CONTIGUOUS(backward_transition_indices);
   CHECK_CONTIGUOUS(backward_transition_probs);
-  CHECK_CONTIGUOUS(initial_probs);
+  CHECK_CONTIGUOUS(leaky_probs);
   CHECK_CONTIGUOUS(exp_nnet_output);
   CHECK_CONTIGUOUS(final_probs);
+  CHECK_CONTIGUOUS(start_state);
   
   ChainComputation chain(
       forward_transitions,
@@ -50,8 +53,9 @@ std::vector<torch::Tensor> ForwardBackward(
       backward_transitions,
       backward_transition_indices,
       backward_transition_probs,
-      initial_probs,
+      leaky_probs,
       final_probs,
+      start_state,
       exp_nnet_output,
       num_states,
       leaky_hmm_coefficient);

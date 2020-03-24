@@ -16,31 +16,6 @@ namespace fst {
   }
 }
 
-std::vector<torch::Tensor> DenominatorFstToTensor(const fst::StdVectorFst &fst) {
-  int num_states = fst.NumStates();
-  int num_transitions;
-  std::vector<int> transitions;
-  std::vector<float> transition_log_probs;
-  for (int s = 0; s < num_states; s++) {
-    for (fst::ArcIterator<fst::StdVectorFst> aiter(fst, s); !aiter.Done();
-         aiter.Next()) {
-      const fst::StdArc &arc = aiter.Value();
-      int pdf_id = arc.ilabel - 1;
-      transitions.push_back(s);
-      transitions.push_back(arc.nextstate);
-      transitions.push_back(pdf_id);
-      transition_log_probs.push_back(-arc.weight.Value());
-      num_transitions++;
-    }
-  }
-  torch::Tensor transitions_tensor = torch::empty({num_transitions, 3}, torch::kInt);
-  torch::Tensor transition_probs_tensor = torch::empty({num_transitions}, torch::kFloat);
-  transitions_tensor.copy_(torch::from_blob(transitions.data(), {num_transitions, 3}, torch::kInt));
-  transition_probs_tensor.copy_(torch::from_blob(transition_log_probs.data(), {num_transitions}, torch::kFloat));
-  transition_probs_tensor.exp_();
-  return {transitions_tensor, transition_probs_tensor};
-}
-
 std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   struct GraphTransition {
     int in_state;
@@ -138,7 +113,7 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
 }
 
 
-torch::Tensor SetInitialProbs(const fst::StdVectorFst &fst) {
+torch::Tensor SetLeakyProbs(const fst::StdVectorFst &fst) {
   // we set only the start-state to have probability mass, and then 100
   // iterations of HMM propagation, over which we average the probabilities.
   // initial probs won't end up making a huge difference as we won't be using
@@ -199,6 +174,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     .def_static("read", (fst::StdVectorFst* (*)(const std::string &)) &fst::StdVectorFst::Read)
     .def_static("read_ark", &fst::ReadFstFromArk)
     .def_static("fst_to_tensor", &FstToTensor)
-    .def_static("set_initial_probs", &SetInitialProbs)
-    .def("num_states", &fst::StdVectorFst::NumStates);
+    .def_static("set_leaky_probs", &SetLeakyProbs)
+    .def("num_states", &fst::StdVectorFst::NumStates)
+    .def("start_state", &fst::StdVectorFst::Start);
 }

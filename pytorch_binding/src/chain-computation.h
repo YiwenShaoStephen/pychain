@@ -169,8 +169,9 @@ class ChainComputation {
     torch::Tensor backward_transitions,
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
-    torch::Tensor initial_probs,
+    torch::Tensor leaky_probs,
     torch::Tensor final_probs,
+    torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
     int num_states, float leaky_hmm_coefficient=1.0e-05);
 
@@ -236,9 +237,10 @@ class ChainComputation {
   torch::Tensor backward_transitions_;
   torch::Tensor backward_transition_indices_;
   torch::Tensor backward_transition_probs_;
-  torch::Tensor initial_probs_;
+  torch::Tensor leaky_probs_;
   // Dimension is (num_sequences, num-hmm-states).
   torch::Tensor final_probs_;
+  torch::Tensor start_state_;
 
   bool final_probs_all_ones_; // True if all elements in final_probs_ are 1.0
   

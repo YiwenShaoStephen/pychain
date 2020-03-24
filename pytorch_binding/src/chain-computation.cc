@@ -28,8 +28,9 @@ ChainComputation::ChainComputation(
     torch::Tensor backward_transitions,
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
-    torch::Tensor initial_probs,
+    torch::Tensor leaky_probs,
     torch::Tensor final_probs,
+    torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
     int num_states, float leaky_hmm_coefficient) {
   
@@ -47,8 +48,9 @@ ChainComputation::ChainComputation(
   backward_transitions_ = backward_transitions;
   backward_transition_indices_ = backward_transition_indices;
   backward_transition_probs_ = backward_transition_probs;
-  initial_probs_ = initial_probs;
+  leaky_probs_ = leaky_probs;
   final_probs_ = final_probs;
+  start_state_ = start_state;
 
   nnet_output_deriv_ = torch::zeros_like(exp_nnet_output);
   exp_nnet_output_ = exp_nnet_output;
@@ -73,7 +75,7 @@ ChainComputation::ChainComputation(
     backward_transitions_ = backward_transitions_.cuda();
     backward_transition_indices_ = backward_transition_indices_.cuda();
     backward_transition_probs_ = backward_transition_probs_.cuda();
-    initial_probs_ = initial_probs_.cuda();
+    leaky_probs_ = leaky_probs_.cuda();
     final_probs_ = final_probs_.cuda();
     alpha_ = alpha_.cuda();
     beta_ = beta_.cuda();
@@ -84,21 +86,18 @@ ChainComputation::ChainComputation(
 }
 
 void ChainComputation::AlphaFirstFrame() {
-  auto first_frame_alpha = alpha_.narrow(1, 0, 1).narrow(2, 0, num_states_);
-  
-  auto init_probs_ex = initial_probs_.expand_as(first_frame_alpha);
-
-  first_frame_alpha.copy_(init_probs_ex);
+  auto start_state_a = start_state_.accessor<int, 1>();
+  for(int s = 0; s < num_sequences_; s++) {
+    int start_state_s = start_state_a[s];
+    auto alpha_initial_state = alpha_.narrow(0, s, 1).narrow(1, 0, 1).narrow(2, start_state_s, 1);
+    alpha_initial_state.fill_(1.0);
+  }
 }
 
 void ChainComputation::AlphaSum(int t) {
   auto this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
   auto this_alpha_tot = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
   this_alpha_tot.copy_(this_alpha.sum(1));
-  if (!final_probs_all_ones_ && t == num_frames_) // add final-probs for the last frame
-    this_alpha_tot.copy_(this_alpha.mul(final_probs_).sum(1));
-  else
-    this_alpha_tot.copy_(this_alpha.sum(1));
 }
 
 // the alpha computation for some 0 < t <= num_time_steps_.
@@ -171,8 +170,8 @@ void ChainComputation::AlphaDash(int t) {
   torch::Tensor this_alpha = alpha_.narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
   torch::Tensor this_tot_alpha = alpha_.narrow(1, t, 1).narrow(2, num_states_, 1).squeeze(1); // B x 1
 
-  // (B x 1) * (1 x H) -> B x H
-  this_alpha.addmm_(this_tot_alpha, initial_probs_.unsqueeze(0), 1.0, leaky_hmm_coefficient_);
+  // (B x H) * (B x H) -> B x H
+  this_alpha.addcmul_(this_tot_alpha.expand_as(this_alpha), leaky_probs_, leaky_hmm_coefficient_);
 }
 
 torch::Tensor ChainComputation::Forward() {
@@ -190,9 +189,13 @@ torch::Tensor ChainComputation::Forward() {
 
 torch::Tensor ChainComputation::ComputeTotLogLike() {
 
-  torch::Tensor alpha_frame_log_tot = alpha_.narrow(2, num_states_, 1).squeeze(2).log();
+  torch::Tensor last_frame_alpha_dash = alpha_.narrow(1, num_frames_, 1)
+    .narrow(2, 0, num_states_).squeeze(1); // B x H
+  torch::Tensor last_frame_alpha_dash_sum = (last_frame_alpha_dash.mul(final_probs_).sum(1)); // B
+  torch::Tensor alpha_frame_log_tot = alpha_.narrow(2, num_states_, 1)
+    .narrow(1, 0, num_frames_).squeeze(2).log(); // B x T
   
-  tot_log_prob_.copy_(torch::sum(alpha_frame_log_tot, 1));
+  tot_log_prob_.copy_(torch::sum(alpha_frame_log_tot, 1) + last_frame_alpha_dash_sum.log());
   tot_prob_.copy_(tot_log_prob_.exp());
 
   return tot_log_prob_.sum();
@@ -208,16 +211,14 @@ void ChainComputation::BetaDashLastFrame() {
 
   torch::Tensor last_frame_beta_dash = beta_.narrow(1, num_frames_ % 2, 1).squeeze(1); // B x H
 
-  torch::Tensor last_frame_alpha_dash_sum = alpha_.narrow(1, num_frames_, 1)
-    .narrow(2, num_states_, 1).squeeze(2).squeeze(1); // B
+  torch::Tensor last_frame_alpha_dash = alpha_.narrow(1, num_frames_, 1)
+    .narrow(2, 0, num_states_).squeeze(1); // B x H
+  torch::Tensor last_frame_alpha_dash_sum = (last_frame_alpha_dash.mul(final_probs_).sum(1)); // B
   torch::Tensor inv_tot_prob = torch::ones_like(last_frame_alpha_dash_sum);
   inv_tot_prob.div_(last_frame_alpha_dash_sum);
 
-  if (final_probs_all_ones_)
-    last_frame_beta_dash.copy_(inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash));
-  else
-    last_frame_beta_dash.copy_(
-        inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash).mul(final_probs_));
+  last_frame_beta_dash.copy_(
+    inv_tot_prob.unsqueeze(1).expand_as(last_frame_beta_dash).mul(final_probs_));
 }
 
 void ChainComputation::BetaDashGeneralFrame(int t) {
@@ -289,9 +290,9 @@ void ChainComputation::Beta(int t) {
   torch::Tensor this_beta_dash = beta_.narrow(1, t % 2, 1).squeeze(1); // B x H
 
   // the beta-dash-sum for each sequence is the sum over all states i of
-  // beta_i * leaky_hmm_coefficient * initial_prob_i.
-  // (B x H) * (H x 1) -> B x 1
-  torch::Tensor this_beta_dash_sum = torch::mm(this_beta_dash, initial_probs_.unsqueeze(1));
+  // beta_i * leaky_hmm_coefficient * leaky_prob_i.
+  // sum((B x H) * (B x H)) -> B x 1
+  torch::Tensor this_beta_dash_sum = this_beta_dash.mul(leaky_probs_).sum(1, true);
   // (B x H) + (B x 1) -> B x H
   this_beta_dash.add_(this_beta_dash_sum, leaky_hmm_coefficient_);
 }
