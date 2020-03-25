@@ -89,7 +89,7 @@ class ChainGraphBatch(object):
         self.num_states = graph.num_states
         self.final_probs = graph.final_probs.repeat(B, 1)
         self.leaky_probs = graph.leaky_probs.repeat(B, 1)
-        self.start_state = graph.start_state * torch.ones(B, dtype=torch.int)
+        self.start_state = graph.start_state * torch.ones(B, dtype=torch.long)
 
     def initialized_by_list(self, graphs, max_num_transitions, max_num_states):
         transition_type = graphs[0].forward_transitions.dtype
@@ -113,7 +113,7 @@ class ChainGraphBatch(object):
         self.final_probs = torch.zeros(
             self.batch_size, max_num_states, dtype=probs_type,
         )
-        self.start_state = torch.zeros(self.batch_size, dtype=torch.int)
+        self.start_state = torch.zeros(self.batch_size, dtype=torch.long)
 
         for i in range(len(graphs)):
             graph = graphs[i]

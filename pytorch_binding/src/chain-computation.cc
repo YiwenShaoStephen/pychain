@@ -77,6 +77,7 @@ ChainComputation::ChainComputation(
     backward_transition_probs_ = backward_transition_probs_.cuda();
     leaky_probs_ = leaky_probs_.cuda();
     final_probs_ = final_probs_.cuda();
+    start_state_ = start_state_.cuda();
     alpha_ = alpha_.cuda();
     beta_ = beta_.cuda();
     tot_prob_ = tot_prob_.cuda();
@@ -86,12 +87,8 @@ ChainComputation::ChainComputation(
 }
 
 void ChainComputation::AlphaFirstFrame() {
-  auto start_state_a = start_state_.accessor<int, 1>();
-  for(int s = 0; s < num_sequences_; s++) {
-    int start_state_s = start_state_a[s];
-    auto alpha_initial_state = alpha_.narrow(0, s, 1).narrow(1, 0, 1).narrow(2, start_state_s, 1);
-    alpha_initial_state.fill_(1.0);
-  }
+  auto alpha_initial_state = alpha_.narrow(1, 0, 1).squeeze(1); // B x H
+  alpha_initial_state.scatter_(1, start_state_.unsqueeze(1), 1.0);
 }
 
 void ChainComputation::AlphaSum(int t) {
