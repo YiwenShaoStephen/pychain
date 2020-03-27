@@ -134,3 +134,14 @@ class ChainGraphBatch(object):
             self.leaky_probs[i, :num_states].copy_(graph.leaky_probs)
             self.final_probs[i, :num_states].copy_(graph.final_probs)
             self.start_state[i] = graph.start_state
+
+    def reorder(self, new_order):
+        self.forward_transitions = self.forward_transitions.index_select(0, new_order)
+        self.forward_transition_indices = self.forward_transition_indices.index_select(0, new_order)
+        self.forward_transition_probs = self.forward_transition_probs.index_select(0, new_order)
+        self.backward_transitions = self.backward_transitions.index_select(0, new_order)
+        self.backward_transition_indices = self.backward_transition_indices.index_select(0, new_order)
+        self.backward_transition_probs = self.backward_transition_probs.index_select(0, new_order)
+        self.leaky_probs = self.leaky_probs.index_select(0, new_order)
+        self.final_probs = self.final_probs.index_select(0, new_order)
+        self.start_state = self.start_state.index_select(0, new_order)

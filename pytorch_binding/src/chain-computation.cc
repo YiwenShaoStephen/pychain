@@ -87,7 +87,7 @@ ChainComputation::ChainComputation(
 }
 
 void ChainComputation::AlphaFirstFrame() {
-  auto alpha_initial_state = alpha_.narrow(1, 0, 1).squeeze(1); // B x H
+  auto alpha_initial_state = alpha_.narrow(1, 0, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
   alpha_initial_state.scatter_(1, start_state_.unsqueeze(1), 1.0);
 }
 
