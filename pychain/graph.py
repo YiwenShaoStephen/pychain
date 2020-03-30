@@ -89,7 +89,7 @@ class ChainGraphBatch(object):
         self.num_states = graph.num_states
         self.final_probs = graph.final_probs.repeat(B, 1)
         self.leaky_probs = graph.leaky_probs.repeat(B, 1)
-        self.start_state = graph.start_state * torch.ones(B, dtype=torch.int)
+        self.start_state = graph.start_state * torch.ones(B, dtype=torch.long)
 
     def initialized_by_list(self, graphs, max_num_transitions, max_num_states):
         transition_type = graphs[0].forward_transitions.dtype
@@ -113,7 +113,7 @@ class ChainGraphBatch(object):
         self.final_probs = torch.zeros(
             self.batch_size, max_num_states, dtype=probs_type,
         )
-        self.start_state = torch.zeros(self.batch_size, dtype=torch.int)
+        self.start_state = torch.zeros(self.batch_size, dtype=torch.long)
 
         for i in range(len(graphs)):
             graph = graphs[i]
@@ -134,3 +134,14 @@ class ChainGraphBatch(object):
             self.leaky_probs[i, :num_states].copy_(graph.leaky_probs)
             self.final_probs[i, :num_states].copy_(graph.final_probs)
             self.start_state[i] = graph.start_state
+
+    def reorder(self, new_order):
+        self.forward_transitions = self.forward_transitions.index_select(0, new_order)
+        self.forward_transition_indices = self.forward_transition_indices.index_select(0, new_order)
+        self.forward_transition_probs = self.forward_transition_probs.index_select(0, new_order)
+        self.backward_transitions = self.backward_transitions.index_select(0, new_order)
+        self.backward_transition_indices = self.backward_transition_indices.index_select(0, new_order)
+        self.backward_transition_probs = self.backward_transition_probs.index_select(0, new_order)
+        self.leaky_probs = self.leaky_probs.index_select(0, new_order)
+        self.final_probs = self.final_probs.index_select(0, new_order)
+        self.start_state = self.start_state.index_select(0, new_order)
