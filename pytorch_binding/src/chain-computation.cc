@@ -83,7 +83,6 @@ ChainComputation::ChainComputation(
     tot_prob_ = tot_prob_.cuda();
     tot_log_prob_ = tot_log_prob_.cuda();
   }
-  final_probs_all_ones_ = final_probs_.eq(1.0).all().item<bool>();
 }
 
 void ChainComputation::AlphaFirstFrame() {

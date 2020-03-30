@@ -242,8 +242,6 @@ class ChainComputation {
   torch::Tensor final_probs_;
   torch::Tensor start_state_;
 
-  bool final_probs_all_ones_; // True if all elements in final_probs_ are 1.0
-  
   // The exp() of the nnet output (the exp() avoids us having to
   // exponentiate in the forward-backward).
   torch::Tensor exp_nnet_output_;
