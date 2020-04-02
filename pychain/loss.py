@@ -22,7 +22,7 @@ import pychain_C
 
 class ChainFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, graphs, leaky_coefficient):
+    def forward(ctx, input, input_lengths, graphs, leaky_coefficient):
         exp_input = input.clamp(-30, 30).exp()
         B = input.size(0)
         if B != graphs.batch_size:
@@ -39,6 +39,10 @@ class ChainFunction(torch.autograd.Function):
         final_probs = graphs.final_probs
         start_state = graphs.start_state
         leaky_coefficient = leaky_coefficient
+        packed_data = torch.nn.utils.rnn.pack_padded_sequence(
+            input, input_lengths, batch_first=True)
+        batch_sizes = packed_data.batch_sizes
+        input_lengths = input_lengths.cpu()
         objf, input_grad, _ = pychain_C.forward_backward(
             forward_transitions,
             forward_transition_indices,
@@ -48,7 +52,10 @@ class ChainFunction(torch.autograd.Function):
             backward_transition_probs,
             leaky_probs, final_probs,
             start_state,
-            exp_input, num_states,
+            exp_input,
+            batch_sizes,
+            input_lengths,
+            num_states,
             leaky_coefficient)
         ctx.save_for_backward(input_grad)
         return objf
@@ -57,7 +64,7 @@ class ChainFunction(torch.autograd.Function):
     def backward(ctx, objf_grad):
         input_grad, = ctx.saved_tensors
         input_grad = torch.mul(input_grad, objf_grad)
-        return input_grad, None, None
+        return input_grad, None, None, None
 
 
 class ChainLoss(nn.Module):
@@ -68,14 +75,14 @@ class ChainLoss(nn.Module):
         self.den_leaky_coefficient = den_leaky_coefficient
         self.num_leaky_coefficient = num_leaky_coefficient
 
-    def forward(self, x, num_graphs):
+    def forward(self, x, x_lengths, num_graphs):
         batch_size = x.size(0)
         den_graphs = ChainGraphBatch(self.den_graph, batch_size)
         den_objf = ChainFunction.apply(
-            x, den_graphs, self.den_leaky_coefficient)
+            x, x_lengths, den_graphs, self.den_leaky_coefficient)
         num_objf = ChainFunction.apply(
-            x, num_graphs, self.num_leaky_coefficient)
+            x, x_lengths, num_graphs, self.num_leaky_coefficient)
         objf = -(num_objf - den_objf)
         if self.avg:
-            objf = objf / (x.size(0) * x.size(1))
+            objf = objf / x_lengths.sum()
         return objf
