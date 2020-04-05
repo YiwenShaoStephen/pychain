@@ -33,6 +33,8 @@ std::vector<torch::Tensor> ForwardBackward(
     torch::Tensor final_probs,
     torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
+    torch::Tensor batch_sizes,
+    torch::Tensor sequence_lengths,
     int num_states,
     float leaky_hmm_coefficient=1.0e-05) {
   CHECK_CONTIGUOUS(forward_transitions);
@@ -43,6 +45,8 @@ std::vector<torch::Tensor> ForwardBackward(
   CHECK_CONTIGUOUS(backward_transition_probs);
   CHECK_CONTIGUOUS(leaky_probs);
   CHECK_CONTIGUOUS(exp_nnet_output);
+  CHECK_CONTIGUOUS(batch_sizes);
+  CHECK_CONTIGUOUS(sequence_lengths);
   CHECK_CONTIGUOUS(final_probs);
   CHECK_CONTIGUOUS(start_state);
   
@@ -57,6 +61,8 @@ std::vector<torch::Tensor> ForwardBackward(
       final_probs,
       start_state,
       exp_nnet_output,
+      batch_sizes,
+      sequence_lengths,
       num_states,
       leaky_hmm_coefficient);
   

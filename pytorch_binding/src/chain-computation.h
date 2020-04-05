@@ -173,6 +173,8 @@ class ChainComputation {
     torch::Tensor final_probs,
     torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
+    torch::Tensor batch_sizes,
+    torch::Tensor sequence_lengths,
     int num_states, float leaky_hmm_coefficient=1.0e-05);
 
   // Does the forward computation, and returns the total log-like summed over
@@ -241,13 +243,17 @@ class ChainComputation {
   // Dimension is (num_sequences, num-hmm-states).
   torch::Tensor final_probs_;
   torch::Tensor start_state_;
-
-  bool final_probs_all_ones_; // True if all elements in final_probs_ are 1.0
   
   // The exp() of the nnet output (the exp() avoids us having to
   // exponentiate in the forward-backward).
   torch::Tensor exp_nnet_output_;
 
+  // batch size of each time step
+  torch::Tensor batch_sizes_;
+
+  // sequence_length (i.e. num of frames) of each sequence
+  torch::Tensor sequence_lengths_;
+  
   // the derivs w.r.t. the nnet outputs
   torch::Tensor nnet_output_deriv_;
 
