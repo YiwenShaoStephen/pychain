@@ -284,9 +284,9 @@ void ChainComputation::BetaDashGeneralFrame(int t) {
     auto transition_probs_a = forward_transition_probs_.accessor<float, 2>();
 
     for (int s = 0; s < num_sequences; s++) {
+      float arbitrary_scale = 1.0 / this_alpha_dash_a[s][num_hmm_states];
       for (int h = 0; h < num_hmm_states; h++) {
-        float this_alpha_dash_prob = this_alpha_dash_a[s][h],
-            arbitrary_scale = 1.0 / this_alpha_dash_a[s][num_hmm_states];
+        float this_alpha_dash_prob = this_alpha_dash_a[s][h];
         float tot_variable_factor = 0.0;
         float occupation_factor = this_alpha_dash_prob * arbitrary_scale;
         for (int trans_i = transition_indices_a[s][h][0]; 
@@ -331,7 +331,7 @@ bool ChainComputation::Backward() {
   Beta(num_frames_);
   for (int t = num_frames_ - 1; t >= 0; t--) {
     BetaDashGeneralFrame(t);
-    if (GetVerboseLevel() >= 1 || t ==0)
+    if (GetVerboseLevel() >= 1 || t == 0)
       BetaGeneralFrameDebug(t);
     Beta(t);
   }

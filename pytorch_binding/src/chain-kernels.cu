@@ -97,12 +97,12 @@ __device__ inline void atomic_add_thresholded(Real* address, Real value) {
 __global__
 static void _cuda_chain_hmm_forward(const int *backward_transition_indices,
                                     const int *backward_transitions,
-				    const float *backward_transition_probs,
-				    const float *probs,
-				    float *alpha,
-				    int t,
-				    int num_sequences,
-				    int num_frames,
+                                    const float *backward_transition_probs,
+                                    const float *probs,
+                                    float *alpha,
+                                    int t,
+                                    int num_sequences,
+                                    int num_frames,
                                     int num_hmm_states,
                                     int num_pdfs,
 				    int num_transitions) {
@@ -171,18 +171,18 @@ static void _cuda_chain_hmm_forward(const int *backward_transition_indices,
 
 __global__
 static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
-				     const int *forward_transitions,
+                                     const int *forward_transitions,
                                      const float *forward_transition_probs,
-				     const float *probs,
-				     const float *alpha,
-				     float *beta,
-				     float *log_prob_deriv,
-				     int t,
-				     int num_sequences,
-				     int num_frames,
-				     int num_hmm_states,
-				     int num_pdfs,
-				     int num_transitions) {
+                                     const float *probs,
+                                     const float *alpha,
+                                     float *beta,
+                                     float *log_prob_deriv,
+                                     int t,
+                                     int num_sequences,
+                                     int num_frames,
+                                     int num_hmm_states,
+                                     int num_pdfs,
+                                     int num_transitions) {
   // s is the index of the sequence within the minibatch,
   // from 0 .. num-egs-in-this-minibatch - 1.
   // h is the hmm-state index.
@@ -223,10 +223,10 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
     tot_variable_factor += variable_factor0 + variable_factor1;
     float occupation_prob0 = variable_factor0 * occupation_factor;
     atomic_add(log_prob_deriv + s * T * D + t * D + pdf_id0,
-	       occupation_prob0);
+               occupation_prob0);
     float occupation_prob1 = variable_factor1 * occupation_factor;
     atomic_add(log_prob_deriv + s * T * D + t * D + pdf_id1,
-	       occupation_prob1);
+               occupation_prob1);
   }
   if (trans_i != trans_end) {
     // mop up the odd transition.
@@ -246,55 +246,55 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
 
 
 void cuda_chain_hmm_forward(dim3 Gr, dim3 Bl,
-			    const int *backward_transition_indices,
-			    const int *backward_transitions,
-			    const float *backward_transition_probs,
-			    const float *probs,
-			    float *alpha,
-			    int t,
-			    int num_sequences,
-			    int num_frames,
-			    int num_hmm_states,
-			    int num_pdfs,
-			    int num_transitions) {
+                            const int *backward_transition_indices,
+                            const int *backward_transitions,
+                            const float *backward_transition_probs,
+                            const float *probs,
+                            float *alpha,
+                            int t,
+                            int num_sequences,
+                            int num_frames,
+                            int num_hmm_states,
+                            int num_pdfs,
+                            int num_transitions) {
   _cuda_chain_hmm_forward<<<Gr,Bl>>>(backward_transition_indices,
-				     backward_transitions,
+                                     backward_transitions,
                                      backward_transition_probs,
-				     probs,
-				     alpha,
-				     t,
-				     num_sequences,
-				     num_frames,
-				     num_hmm_states,
+                                     probs,
+                                     alpha,
+                                     t,
+                                     num_sequences,
+                                     num_frames,
+                                     num_hmm_states,
                                      num_pdfs,
-				     num_transitions);
+                                     num_transitions);
 }
 
 void cuda_chain_hmm_backward(dim3 Gr, dim3 Bl,
-			     const int *forward_transition_indices,
-			     const int *forward_transitions,
-			     const float *forward_transition_probs,
-			     const float *probs,
-			     const float *alpha,
-			     float *beta,
-			     float *log_prob_deriv,
-			     int t,
-			     int num_sequences,
-			     int num_frames,
-			     int num_hmm_states,
-			     int num_pdfs,
-			     int num_transitions) {
+                             const int *forward_transition_indices,
+                             const int *forward_transitions,
+                             const float *forward_transition_probs,
+                             const float *probs,
+                             const float *alpha,
+                             float *beta,
+                             float *log_prob_deriv,
+                             int t,
+                             int num_sequences,
+                             int num_frames,
+                             int num_hmm_states,
+                             int num_pdfs,
+                             int num_transitions) {
   _cuda_chain_hmm_backward<<<Gr,Bl>>>(forward_transition_indices,
-				      forward_transitions,
-				      forward_transition_probs,
-				      probs,
-				      alpha,
-				      beta,
-				      log_prob_deriv,
-				      t,
+                                      forward_transitions,
+                                      forward_transition_probs,
+                                      probs,
+                                      alpha,
+                                      beta,
+                                      log_prob_deriv,
+                                      t,
                                       num_sequences,
-				      num_frames,
-				      num_hmm_states,
-				      num_pdfs,
-				      num_transitions);
+                                      num_frames,
+                                      num_hmm_states,
+                                      num_pdfs,
+                                      num_transitions);
 }
