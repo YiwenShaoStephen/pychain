@@ -56,7 +56,7 @@ ChainComputation::ChainComputation(
 
   nnet_output_deriv_ = torch::zeros_like(exp_nnet_output);
   exp_nnet_output_ = exp_nnet_output;
-  batch_sizes_ = batch_sizes; // don't need to be put on GPU
+  batch_sizes_ = batch_sizes; // don't need to be put on GPUs
   sequence_lengths_ = sequence_lengths.to(torch::kLong);
 
   // We don't let leaky_hmm_coefficient be exactly zero (although that would
@@ -71,6 +71,7 @@ ChainComputation::ChainComputation(
   beta_ = torch::zeros({num_sequences_, 2, num_states_}, torch::kFloat);
   tot_prob_ = torch::zeros({num_sequences_}, torch::kFloat);
   tot_log_prob_ = torch::zeros({num_sequences_}, torch::kFloat);
+  ok_ = true;
   
   if(cuda_) {
     forward_transitions_ = forward_transitions_.cuda();
