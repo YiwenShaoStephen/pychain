@@ -20,7 +20,7 @@
 #include "chain-computation.h"
 #include "base.h"
 
-#define CHECK_CONTIGUOUS(x) AT_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 
 std::vector<torch::Tensor> ForwardBackward(
     torch::Tensor forward_transitions,
