@@ -7,6 +7,7 @@ setup(name='pychain_C',
                                  ['src/pychain.cc',
                                   'src/base.cc',
                                   'src/chain-kernels.cu',
-                                  'src/chain-computation.cc'],
+                                  'src/chain-computation.cc',
+                                  'src/chain-numerator-computation.cc'],
                                  include_dirs=['src'])],
       cmdclass={'build_ext': BuildExtension})
