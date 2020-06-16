@@ -3,6 +3,7 @@ from setuptools import setup
 import torch
 from torch.utils.cpp_extension import CUDAExtension, BuildExtension, CUDA_HOME
 
+# Fix issue: Build extensions with/without CUDA [#27222](https://github.com/pytorch/pytorch/issues/27222)
 # The following code block is borrowed from: https://github.com/microsoft/pytorch_od
 assert CUDA_HOME or os.getenv("FORCE_CUDA", "0") == "1", "CUDA not found"
 if not torch.cuda.is_available():
