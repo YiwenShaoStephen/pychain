@@ -16,7 +16,7 @@ namespace fst {
   }
 }
 
-std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
+std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst, bool log_domain=false) {
   struct GraphTransition {
     int in_state;
     int out_state;
@@ -28,7 +28,7 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   };
 
   int num_states = fst.NumStates();
-  
+
   std::vector<std::vector<GraphTransition> > transitions_out_tup(num_states);
   std::vector<std::vector<GraphTransition> > transitions_in_tup(num_states);
   std::vector<float> final_probs(num_states);
@@ -40,8 +40,8 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
       const fst::StdArc &arc = aiter.Value();
       int pdf_id = arc.ilabel - 1;
       assert(pdf_id >= 0 && pdf_id < num_pdfs);
-      transitions_out_tup[s].emplace_back(s, arc.nextstate, pdf_id, -arc.weight.Value()); 
-      transitions_in_tup[arc.nextstate].emplace_back(s, arc.nextstate, pdf_id, -arc.weight.Value()); 
+      transitions_out_tup[s].emplace_back(s, arc.nextstate, pdf_id, -arc.weight.Value());
+      transitions_in_tup[arc.nextstate].emplace_back(s, arc.nextstate, pdf_id, -arc.weight.Value());
     }
   }
 
@@ -50,7 +50,7 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   std::vector<float> forward_log_probs;
   for (int s = 0; s < num_states; s++) {
     forward_transition_indices[2*s] = static_cast<int32>(forward_transitions.size()) / 3;
-    for (auto it = transitions_out_tup[s].begin(); 
+    for (auto it = transitions_out_tup[s].begin();
          it != transitions_out_tup[s].end(); ++it) {
       auto& transition = *it;
       forward_transitions.push_back(transition.in_state);
@@ -66,7 +66,7 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
   std::vector<float> backward_log_probs;
   for (int s = 0; s < num_states; s++) {
     backward_transition_indices[2*s] = static_cast<int32>(backward_transitions.size()) / 3;
-    for (auto it = transitions_in_tup[s].begin(); 
+    for (auto it = transitions_in_tup[s].begin();
          it != transitions_in_tup[s].end(); ++it) {
       auto& transition = *it;
       backward_transitions.push_back(transition.in_state);
@@ -86,7 +86,8 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
 
   torch::Tensor forward_transition_probs_tensor = torch::empty({num_transitions}, torch::kFloat);
   forward_transition_probs_tensor.copy_(torch::from_blob(forward_log_probs.data(), {num_transitions}, torch::kFloat));
-  forward_transition_probs_tensor.exp_();
+  if (!log_domain)
+    forward_transition_probs_tensor.exp_();
 
   torch::Tensor backward_transitions_tensor = torch::empty({num_transitions, 3}, torch::kInt);
   backward_transitions_tensor.copy_(
@@ -97,11 +98,14 @@ std::vector<torch::Tensor> FstToTensor(const fst::StdVectorFst &fst) {
 
   torch::Tensor backward_transition_probs_tensor = torch::empty({num_transitions}, torch::kFloat);
   backward_transition_probs_tensor.copy_(torch::from_blob(backward_log_probs.data(), {num_transitions}, torch::kFloat));
-  backward_transition_probs_tensor.exp_();
+  if (!log_domain)
+    backward_transition_probs_tensor.exp_();
 
   torch::Tensor final_probs_tensor = torch::empty({num_states}, torch::kFloat);
   final_probs_tensor.copy_(torch::from_blob(final_probs.data(), {num_states}, torch::kFloat));
-  final_probs_tensor.exp_();
+  if (!log_domain)
+    final_probs_tensor.exp_();
+
   return {forward_transitions_tensor,
       forward_transition_probs_tensor,
       forward_transition_indices_tensor,
@@ -126,7 +130,7 @@ torch::Tensor SetLeakyProbs(const fst::StdVectorFst &fst) {
   // have transition probabilities.
   torch::Tensor normalizing_factor = torch::zeros(num_states, torch::kDouble);
   auto nf_a = normalizing_factor.accessor<double, 1>();
- 
+
   for (int32 s = 0; s < num_states; s++) {
     double tot_prob = exp(-fst.Final(s).Value());
     for (fst::ArcIterator<fst::StdVectorFst> aiter(fst, s); !aiter.Done();

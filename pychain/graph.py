@@ -1,5 +1,6 @@
-# Copyright       2019 Yiwen Shao
-#                 2020 Yiming Wang
+# Copyright       2019  Yiwen Shao
+#                 2020  Yiming Wang
+#                 2020  Facebook Inc.  (author: Vimal Manohar)
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,31 +22,48 @@ import simplefst
 
 class ChainGraph(object):
 
-    def __init__(self, fst, leaky_mode='uniform'):
+    def __init__(
+        self,
+        fst,
+        initial_mode="fst",
+        final_mode="fst",
+        log_domain=False,
+    ):
         self.num_states = fst.num_states()
-        assert(leaky_mode in ['uniform', 'transition'])
-        self.leaky_mode = leaky_mode
-        (self.forward_transitions,
-         self.forward_transition_probs,
-         self.forward_transition_indices,
-         self.backward_transitions,
-         self.backward_transition_probs,
-         self.backward_transition_indices,
-         self.final_probs) = simplefst.StdVectorFst.fst_to_tensor(fst)
+        assert initial_mode in ["fst", "leaky"]
+        assert final_mode in ["fst", "ones"]
+        self.log_domain = log_domain
+        (
+            self.forward_transitions,
+            self.forward_transition_probs,
+            self.forward_transition_indices,
+            self.backward_transitions,
+            self.backward_transition_probs,
+            self.backward_transition_indices,
+            self.final_probs,
+        ) = simplefst.StdVectorFst.fst_to_tensor(fst, log_domain)
 
         self.num_transitions = self.forward_transitions.size(0)
         self.is_empty = (self.num_transitions == 0)
         self.start_state = simplefst.StdVectorFst.start_state(fst)
+
+        self.initial_probs = torch.zeros(self.num_states)
+
         if not self.is_empty:
-            if leaky_mode == 'transition':
-                start, end = self.forward_transition_indices[self.start_state]
-                entries = self.forward_transitions[start:end, 1].long()
-                self.leaky_probs = torch.zeros(self.num_states)
-                self.leaky_probs[entries] = self.forward_transition_probs[start:end]
-                self.leaky_probs = self.leaky_probs / self.leaky_probs.sum()
+            self.leaky_probs = simplefst.StdVectorFst.set_leaky_probs(fst)
+
+            if initial_mode == "fst":
+                self.initial_probs[self.start_state] = 1.0
             else:
-                self.leaky_probs = torch.ones(
-                    self.num_states) / self.num_states
+                self.initial_probs.copy_(self.leaky_probs)
+            if self.log_domain:
+                self.initial_probs.log_()
+
+            if final_mode == "ones":
+                if self.log_domain:
+                    self.final_probs.fill_(0.0)
+                else:
+                    self.final_probs.fill_(1.0)
 
 
 class ChainGraphBatch(object):
@@ -88,11 +106,15 @@ class ChainGraphBatch(object):
         self.num_states = graph.num_states
         self.final_probs = graph.final_probs.repeat(B, 1)
         self.leaky_probs = graph.leaky_probs.repeat(B, 1)
+        self.initial_probs = graph.initial_probs.repeat(B, 1)
         self.start_state = graph.start_state * torch.ones(B, dtype=torch.long)
+        self.log_domain = graph.log_domain
+
 
     def initialized_by_list(self, graphs, max_num_transitions, max_num_states):
         transition_type = graphs[0].forward_transitions.dtype
         probs_type = graphs[0].forward_transition_probs.dtype
+        self.log_domain = graphs[0].log_domain
         self.num_states = max_num_states
         self.num_transitions = max_num_transitions
         self.forward_transitions = torch.zeros(
@@ -109,9 +131,16 @@ class ChainGraphBatch(object):
             self.batch_size, max_num_transitions, dtype=probs_type)
         self.leaky_probs = torch.zeros(
             self.batch_size, max_num_states, dtype=probs_type)
-        self.final_probs = torch.zeros(
-            self.batch_size, max_num_states, dtype=probs_type,
-        )
+        if self.log_domain:
+            self.initial_probs = torch.full(
+                [self.batch_size, max_num_states], float("-inf"), dtype=probs_type)
+            self.final_probs = torch.full(
+                [self.batch_size, max_num_states], float("-inf"), dtype=probs_type)
+        else:
+            self.initial_probs = torch.zeros(
+                [self.batch_size, max_num_states], dtype=probs_type)
+            self.final_probs = torch.zeros(
+                [self.batch_size, max_num_states], dtype=probs_type)
         self.start_state = torch.zeros(self.batch_size, dtype=torch.long)
 
         for i in range(len(graphs)):
@@ -131,6 +160,7 @@ class ChainGraphBatch(object):
             self.backward_transition_probs[i, :num_transitions].copy_(
                 graph.backward_transition_probs)
             self.leaky_probs[i, :num_states].copy_(graph.leaky_probs)
+            self.initial_probs[i, :num_states].copy_(graph.initial_probs)
             self.final_probs[i, :num_states].copy_(graph.final_probs)
             self.start_state[i] = graph.start_state
 
@@ -148,5 +178,6 @@ class ChainGraphBatch(object):
         self.backward_transition_probs = self.backward_transition_probs.index_select(
             0, new_order)
         self.leaky_probs = self.leaky_probs.index_select(0, new_order)
+        self.initial_probs = self.initial_probs.index_select(0, new_order)
         self.final_probs = self.final_probs.index_select(0, new_order)
         self.start_state = self.start_state.index_select(0, new_order)

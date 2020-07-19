@@ -105,7 +105,7 @@ static void _cuda_chain_hmm_forward(const int *backward_transition_indices,
                                     int num_frames,
                                     int num_hmm_states,
                                     int num_pdfs,
-				    int num_transitions) {
+                                    int num_transitions) {
   // s is the index of the sequence within the minibatch,
   // from 0 .. num-egs-in-this-minibatch - 1.
   // h is the hmm-state index.
@@ -114,12 +114,12 @@ static void _cuda_chain_hmm_forward(const int *backward_transition_indices,
   if (s >= num_sequences)
     return;
 
-  // T, H, D, K are used as strides ,
+  // T, H, D, K are used as strides
   int T = num_frames,
     H = num_hmm_states,
     D = num_pdfs,
     K = num_transitions;
-  
+
   float this_tot_alpha = 0.0;
   int trans_i = backward_transition_indices[s * H * 2 + h * 2],
       trans_end = backward_transition_indices[s * H * 2 + h * 2 + 1];
@@ -191,7 +191,7 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
   if (s >= num_sequences)
     return;
 
-  // T, H, D, K are used as strides 
+  // T, H, D, K are used as strides
   int T = num_frames,
     H = num_hmm_states,
     D = num_pdfs,
@@ -222,11 +222,11 @@ static void _cuda_chain_hmm_backward(const int *forward_transition_indices,
       probs[s * T * D + t * D + pdf_id1];
     tot_variable_factor += variable_factor0 + variable_factor1;
     float occupation_prob0 = variable_factor0 * occupation_factor;
-    atomic_add(log_prob_deriv + s * T * D + t * D + pdf_id0,
-               occupation_prob0);
+    atomic_add_thresholded(log_prob_deriv + s * T * D + t * D + pdf_id0,
+                           occupation_prob0);
     float occupation_prob1 = variable_factor1 * occupation_factor;
-    atomic_add(log_prob_deriv + s * T * D + t * D + pdf_id1,
-               occupation_prob1);
+    atomic_add_thresholded(log_prob_deriv + s * T * D + t * D + pdf_id1,
+                           occupation_prob1);
   }
   if (trans_i != trans_end) {
     // mop up the odd transition.

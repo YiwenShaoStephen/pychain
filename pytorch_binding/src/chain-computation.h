@@ -170,6 +170,7 @@ class ChainComputation {
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
     torch::Tensor leaky_probs,
+    torch::Tensor initial_probs,
     torch::Tensor final_probs,
     torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
@@ -241,9 +242,10 @@ class ChainComputation {
   torch::Tensor backward_transition_probs_;
   torch::Tensor leaky_probs_;
   // Dimension is (num_sequences, num-hmm-states).
+  torch::Tensor initial_probs_;
   torch::Tensor final_probs_;
   torch::Tensor start_state_;
-  
+
   // The exp() of the nnet output (the exp() avoids us having to
   // exponentiate in the forward-backward).
   torch::Tensor exp_nnet_output_;
@@ -253,7 +255,7 @@ class ChainComputation {
 
   // sequence_length (i.e. num of frames) of each sequence
   torch::Tensor sequence_lengths_;
-  
+
   // the derivs w.r.t. the nnet outputs
   torch::Tensor nnet_output_deriv_;
 
@@ -277,6 +279,6 @@ class ChainComputation {
 
   // do computation on cuda or not
   bool cuda_;
-  
+
   bool ok_;
 };
