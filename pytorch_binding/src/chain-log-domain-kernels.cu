@@ -21,77 +21,7 @@
 #include <stdio.h>
 
 
-/*
-  This implementation of log1p is obtained from
-  https://forums.developer.nvidia.com/t/faster-and-more-accurate-implementation-of-log1pf/40575/14
-
-  Copyright (c) 2015-2017, Norbert Juffa
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  1. Redistributions of source code must retain the above copyright
-     notice, this list of conditions and the following disclaimer.
-
-  2. Redistributions in binary form must reproduce the above copyright
-     notice, this list of conditions and the following disclaimer in the
-     documentation and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
-/* log1p(a) = log(a+1) = log(2**e * t) = log(2)*e + log(t). With t = m + 1,
-   log1p(a) = log(2)*e + log1p(m). Choose e such that m is in [-0.25, 0.5],
-   with s = 2**(-e) we then have m = s*(a+1) - 1 = s*a + (s - 1). Instead
-   of using s directly, an intermediate scale factor s' = 4*s is utilized
-   to ensure this is representable as a normalized floating-point number.
-
-   max ulp err = 0.87454
-*/
-__device__ float my_log1pf (float a)
-{
-    float m, r, s, t, u; 
-    int e;
-
-    u = __fadd_rz (a, 1.0f);
-    e = (__float_as_int (u) - __float_as_int (0.75f)) & 0xff800000;
-    m = __int_as_float (__float_as_int (a) - e);
-    s = __int_as_float (__float_as_int (4.0f) - e); // s' in [2**-126,2**26]
-    m = m + fmaf (0.25f, s, -1.0f);
-    // approximate log(1+m) on [-0.25, 0.5]
-    s = m * m;
-    r =             -4.53948975e-2f;  // -0x1.73e000p-5
-    t =              1.05468750e-1f;  //  0x1.b00000p-4
-    r = fmaf (r, s, -1.32274792e-1f); // -0x1.0ee616p-3
-    t = fmaf (t, s,  1.44911826e-1f); //  0x1.28c788p-3
-    r = fmaf (r, s, -1.66412741e-1f); // -0x1.54d034p-3
-    t = fmaf (t, s,  1.99887201e-1f); //  0x1.995e76p-3
-    r = fmaf (r, s, -2.50002742e-1f); // -0x1.0000b8p-2
-    r = fmaf (t, m, r);
-    r = fmaf (r, m,  3.33335280e-1f); //  0x1.5555d8p-2
-    r = fmaf (r, m, -4.99999970e-1f); // -0x1.fffffep-2
-    r = fmaf (r, s, m);
-    r = fmaf ((float)e, 0.693147182f * 1.1920929e-7f, r); // log(2) * 0x1.0p-23
-    if (!((a != 0.0f) && (u > 0.0f) && (a < __int_as_float (0x7f800000)))) {
-        asm ("lg2.approx.ftz.f32 %0,%1;" : "=f"(r) : "f"(u));
-        r = __fadd_rd (r, a); // handle negative zero
-    }
-    return r;
-}
-
-static __constant__ float cuMinLogDiffFloat = -6.92368989864f;
+static __constant__ float cuMinLogDiffFloat = -15.9423851491f; // log(1.19209290e-7f)
 
 template <typename Real>
 __device__ inline Real log_add(Real x, Real y) {
@@ -107,7 +37,7 @@ __device__ inline Real log_add(Real x, Real y) {
 
   if (diff >= cuMinLogDiffFloat) {
     Real res;
-    res = x + my_log1pf(expf(diff));
+    res = x + log1pf(expf(diff));
     return res;
   } else {
     return x;  // return the larger one.
@@ -151,6 +81,7 @@ __device__ inline void atomic_log_add(Real* address, Real value) {
 
 
 // Similiar to those in chain-kernels.cu, but computed in log-domain.
+// Basically the operator "*" is replaced with "+", and "+" is replaced with "log_add".
 
 __global__
 static void _cuda_chain_hmm_log_domain_forward(const int *backward_transition_indices,
