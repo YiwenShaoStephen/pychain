@@ -38,11 +38,11 @@ ChainLogDomainComputation::ChainLogDomainComputation(
     int num_states) {
 
   cuda_ = nnet_output.type().is_cuda();
-  num_sequences_ = nnet_output.size(0);
+  num_sequences_ = (int) nnet_output.size(0);
   num_states_ = num_states;
-  num_pdfs_ = nnet_output.size(2);
-  num_frames_ = nnet_output.size(1);
-  num_transitions_ = forward_transitions.size(1);
+  num_pdfs_ = (int) nnet_output.size(2);
+  num_frames_ = (int) nnet_output.size(1);
+  num_transitions_ = (int) forward_transitions.size(1);
 
   forward_transitions_ = forward_transitions;
   forward_transition_indices_ = forward_transition_indices;
@@ -94,10 +94,10 @@ void ChainLogDomainComputation::AlphaGeneralFrame(int t) {
   assert(t > 0 && t <= num_frames_);
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
   int num_hmm_states = num_states_,
-    num_frames = num_frames_,
-    num_pdfs = num_pdfs_,
-    num_transitions = num_transitions_;
-  long num_sequences = batch_sizes_a[t - 1];
+      num_frames = num_frames_,
+      num_pdfs = num_pdfs_,
+      num_transitions = num_transitions_;
+  int num_sequences = (int) batch_sizes_a[t - 1];
 
   torch::Tensor this_alpha = alpha_.narrow(0, 0, num_sequences)
     .narrow(1, t, 1).narrow(2, 0, num_hmm_states).squeeze(1); // B x H
@@ -139,8 +139,9 @@ void ChainLogDomainComputation::AlphaGeneralFrame(int t) {
           float prob = probs_a[s][pdf_id],
               this_prev_alpha = prev_alpha_a[s][prev_hmm_state];
           this_alpha_a[s][h] = LogAdd(this_alpha_a[s][h],
-            this_prev_alpha + transition_prob + prob);
+                                      this_prev_alpha + transition_prob + prob);
         }
+        assert(this_alpha_a[s][h] - this_alpha_a[s][h] == 0);
       }
     }
 
@@ -172,15 +173,19 @@ torch::Tensor ChainLogDomainComputation::ComputeTotLogLike() {
   torch::Tensor last_frame_alpha = alpha_.gather(1, last_frame_index)
     .narrow(2, 0, num_states_).squeeze(1); // B x H
   torch::Tensor last_frame_alpha_sum = last_frame_alpha.add(final_probs_).logsumexp(1); // B
+
+  // Set alpha_tot(T) in each sequence to 0.0 so that its original value will
+  // not be added to tot_log_prob_. B x (T+1) <- B x 1
+  alpha_.narrow(2, num_states_, 1).squeeze(2).scatter_(1, sequence_lengths_.unsqueeze(1), 0.0);
   torch::Tensor alpha_frame_tot = alpha_.narrow(1, 0, num_frames_)
     .narrow(2, num_states_, 1).squeeze(2); // B x T
-  // replace "-inf" with 0 in alpha_frame_tot, so that values "-inf" will not been
-  // counted while doing summation of elements in alpha_frame_tot
+  // replace "-inf" with 0 in alpha_frame_tot, so that "-inf" will not been
+  // added to tot_log_prob_
   torch::Tensor alpha_frame_log_tot = torch::where(
       alpha_frame_tot.ne(-std::numeric_limits<float>::infinity()),
       alpha_frame_tot, alpha_frame_tot.new_zeros({1}));
-  tot_log_prob_.copy_(alpha_frame_log_tot.sum(1) + last_frame_alpha_sum); // B
 
+  tot_log_prob_.copy_(alpha_frame_log_tot.sum(1) + last_frame_alpha_sum); // B
   return tot_log_prob_.sum();
 }
 
@@ -200,10 +205,10 @@ void ChainLogDomainComputation::BetaGeneralFrame(int t) {
   assert(t >= 0 && t < num_frames_);
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
   int num_hmm_states = num_states_,
-    num_frames = num_frames_,
-    num_pdfs = num_pdfs_,
-    num_transitions = num_transitions_;
-  long num_sequences = batch_sizes_a[t];
+      num_frames = num_frames_,
+      num_pdfs = num_pdfs_,
+      num_transitions = num_transitions_;
+  int num_sequences = (int) batch_sizes_a[t];
 
   if (cuda_) {
     dim3 dimBlock(std::min<int>(CU1DBLOCK, num_sequences), 1, 1);
@@ -277,7 +282,7 @@ bool ChainLogDomainComputation::Backward() {
 
 void ChainLogDomainComputation::BetaGeneralFrameDebug(int t) {
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
-  int batch_size_next = batch_sizes_a[t];
+  int batch_size_next = (int) batch_sizes_a[t];
 
   torch::Tensor this_log_prob_deriv = nnet_output_deriv_.narrow(0, 0, batch_size_next).narrow(1, t, 1);
 
