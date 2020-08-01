@@ -21,7 +21,7 @@
 #include <stdio.h>
 
 
-static __constant__ float cuMinLogDiffFloat = -15.9423851491f; // log(1.19209290e-7f)
+static __constant__ float cuMinLogDiffFloat = -15.942385f; // log(1.19209290e-7f)
 
 template <typename Real>
 __device__ inline Real log_add(Real x, Real y) {
@@ -209,8 +209,8 @@ static void _cuda_chain_hmm_log_domain_backward(const int *forward_transition_in
     float variable_factor1 = transition_prob1 +
       beta[s * 2 * H + ((t+1) % 2) * H + next_hmm_state1] +
       probs[s * T * D + t * D + pdf_id1];
-    tot_variable_factor = log_add(tot_variable_factor,
-        log_add(variable_factor0, variable_factor1));
+    tot_variable_factor = log_add(log_add(tot_variable_factor, variable_factor0),
+                                  variable_factor1);
     float occupation_prob0 = variable_factor0 + occupation_factor;
     atomic_log_add(log_prob_deriv + s * T * D + t * D + pdf_id0,
                    occupation_prob0);

@@ -1,4 +1,4 @@
-// chain-numerator-computation.cc
+// chain-log-domain-computation.cc
 
 // Copyright      2015   Johns Hopkins University (author: Daniel Povey)
 //                2019   Yiwen Shao

@@ -30,6 +30,7 @@ logger.setLevel(logging.DEBUG)
 class ChainFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, input_lengths, graphs, leaky_coefficient=1e-5):
+        input = input.clamp(-30, 30)  # clamp for both the denominator and the numerator
         B = input.size(0)
         if B != graphs.batch_size:
             raise ValueError("input batch size {0} does not equal to graph batch size {1}"
@@ -38,8 +39,8 @@ class ChainFunction(torch.autograd.Function):
             input, input_lengths, batch_first=True)
         batch_sizes = packed_data.batch_sizes
         input_lengths = input_lengths.cpu()
-        if not graphs.log_domain:  # for the denominator
-            exp_input = input.clamp(-30, 30).exp()
+        if not graphs.log_domain:  # usually for the denominator
+            exp_input = input.exp()
             objf, input_grad, ok = pychain_C.forward_backward(
                 graphs.forward_transitions,
                 graphs.forward_transition_indices,
@@ -57,7 +58,7 @@ class ChainFunction(torch.autograd.Function):
                 graphs.num_states,
                 leaky_coefficient,
             )
-        else:  # for the numerator
+        else:  # usually for the numerator
             objf, log_probs_grad, ok = pychain_C.forward_backward_log_domain(
                 graphs.forward_transitions,
                 graphs.forward_transition_indices,
@@ -89,6 +90,7 @@ class ChainFunction(torch.autograd.Function):
 class ChainLossFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, input_lengths, num_graphs, den_graph, leaky_coefficient=1e-5):
+        input = input.clamp(-30, 30)  # clamp for both the denominator and the numerator
         B = input.size(0)
         if B != num_graphs.batch_size:
             raise ValueError("input batch size {0} does not equal to graph batch size {1}"
@@ -99,7 +101,7 @@ class ChainLossFunction(torch.autograd.Function):
         input_lengths = input_lengths.cpu()
 
         den_graphs = ChainGraphBatch(den_graph, B)
-        exp_input = input.clamp(-30, 30).exp()
+        exp_input = input.exp()
         den_objf, input_grad, denominator_ok = pychain_C.forward_backward(
             den_graphs.forward_transitions,
             den_graphs.forward_transition_indices,
