@@ -74,24 +74,29 @@ class ChainGraphBatch(object):
     def __init__(self, graphs, batch_size=None, max_num_transitions=None, max_num_states=None):
         if isinstance(graphs, ChainGraph):
             if not batch_size:
-                raise ValueError(
-                    "batch size should be specified to expand a single graph")
+                raise ValueError("batch size should be specified to expand a single graph")
             self.batch_size = batch_size
             self.initialized_by_one(graphs)
         elif isinstance(graphs, (list, ChainGraph)):
             if not max_num_transitions:
-                raise ValueError("max_num_transitions should be specified if given a "
-                                 "a list of ChainGraph objects to initialize from")
+                raise ValueError(
+                    "max_num_transitions should be specified if given a "
+                    "a list of ChainGraph objects to initialize from"
+                )
             if not max_num_states:
-                raise ValueError("max_num_states should be specified if given a "
-                                 "a list of ChainGraph objects to initialize from")
+                raise ValueError(
+                    "max_num_states should be specified if given a "
+                    "a list of ChainGraph objects to initialize from"
+                )
             self.batch_size = len(graphs)
             self.initialized_by_list(
                 graphs, max_num_transitions, max_num_states)
         else:
-            raise ValueError("ChainGraphBatch should be either initialized by a "
-                             "single ChainGraph object or a list of ChainGraph objects "
-                             "but given {}".format(type(graphs)))
+            raise ValueError(
+                "ChainGraphBatch should be either initialized by a "
+                "single ChainGraph object or a list of ChainGraph objects "
+                "but given {}".format(type(graphs))
+            )
 
     def initialized_by_one(self, graph):
         self.log_domain = graph.log_domain
@@ -121,17 +126,17 @@ class ChainGraphBatch(object):
         self.num_states = max_num_states
         self.num_transitions = max_num_transitions
         self.forward_transitions = torch.zeros(
-            self.batch_size, max_num_transitions, 3, dtype=transition_type)
+            [self.batch_size, max_num_transitions, 3], dtype=transition_type)
         self.forward_transition_indices = torch.zeros(
-            self.batch_size, max_num_states, 2, dtype=transition_type)
+            [self.batch_size, max_num_states, 2], dtype=transition_type)
         self.forward_transition_probs = torch.zeros(
-            self.batch_size, max_num_transitions, dtype=probs_type)
+            [self.batch_size, max_num_transitions], dtype=probs_type)
         self.backward_transitions = torch.zeros(
-            self.batch_size, max_num_transitions, 3, dtype=transition_type)
+            [self.batch_size, max_num_transitions, 3], dtype=transition_type)
         self.backward_transition_indices = torch.zeros(
-            self.batch_size, max_num_states, 2, dtype=transition_type)
+            [self.batch_size, max_num_states, 2], dtype=transition_type)
         self.backward_transition_probs = torch.zeros(
-            self.batch_size, max_num_transitions, dtype=probs_type)
+            [self.batch_size, max_num_transitions], dtype=probs_type)
         if self.log_domain:
             self.leaky_probs = None  # no leaky hmm if in log domain
             self.initial_probs = torch.full(
@@ -145,7 +150,7 @@ class ChainGraphBatch(object):
                 [self.batch_size, max_num_states], dtype=probs_type)
             self.final_probs = torch.zeros(
                 [self.batch_size, max_num_states], dtype=probs_type)
-        self.start_state = torch.zeros(self.batch_size, dtype=torch.long)
+        self.start_state = torch.zeros([self.batch_size], dtype=torch.long)
 
         for i in range(len(graphs)):
             graph = graphs[i]
