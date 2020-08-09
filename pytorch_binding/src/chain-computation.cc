@@ -29,20 +29,20 @@ ChainComputation::ChainComputation(
     torch::Tensor backward_transition_indices,
     torch::Tensor backward_transition_probs,
     torch::Tensor leaky_probs,
+    torch::Tensor initial_probs,
     torch::Tensor final_probs,
     torch::Tensor start_state,
     torch::Tensor exp_nnet_output,
     torch::Tensor batch_sizes,
     torch::Tensor sequence_lengths,
     int num_states, float leaky_hmm_coefficient) {
-  
-  
+
   cuda_ = exp_nnet_output.type().is_cuda();
-  num_sequences_ = exp_nnet_output.size(0);
+  num_sequences_ = (int) exp_nnet_output.size(0);
   num_states_ = num_states;
-  num_pdfs_ = exp_nnet_output.size(2);
-  num_frames_ = exp_nnet_output.size(1);
-  num_transitions_ = forward_transitions.size(1);
+  num_pdfs_ = (int) exp_nnet_output.size(2);
+  num_frames_ = (int) exp_nnet_output.size(1);
+  num_transitions_ = (int) forward_transitions.size(1);
 
   forward_transitions_ = forward_transitions;
   forward_transition_indices_ = forward_transition_indices;
@@ -51,6 +51,7 @@ ChainComputation::ChainComputation(
   backward_transition_indices_ = backward_transition_indices;
   backward_transition_probs_ = backward_transition_probs;
   leaky_probs_ = leaky_probs;
+  initial_probs_ = initial_probs;
   final_probs_ = final_probs;
   start_state_ = start_state.to(torch::kLong);
 
@@ -67,13 +68,13 @@ ChainComputation::ChainComputation(
   assert(leaky_hmm_coefficient > 0.0 && leaky_hmm_coefficient < 1.0);
   leaky_hmm_coefficient_ = leaky_hmm_coefficient;
 
-  alpha_ = torch::zeros({num_sequences_, num_frames_ + 1, num_states_ + 1}, torch::kFloat);
-  beta_ = torch::zeros({num_sequences_, 2, num_states_}, torch::kFloat);
-  tot_prob_ = torch::zeros({num_sequences_}, torch::kFloat);
-  tot_log_prob_ = torch::zeros({num_sequences_}, torch::kFloat);
+  alpha_ = exp_nnet_output.new_zeros({num_sequences_, num_frames_ + 1, num_states_ + 1});
+  beta_ = exp_nnet_output.new_zeros({num_sequences_, 2, num_states_});
+  tot_prob_ = exp_nnet_output.new_zeros({num_sequences_});
+  tot_log_prob_ = exp_nnet_output.new_zeros({num_sequences_});
   ok_ = true;
-  
-  if(cuda_) {
+
+  if (cuda_) {
     forward_transitions_ = forward_transitions_.cuda();
     forward_transition_indices_ = forward_transition_indices_.cuda();
     forward_transition_probs_ = forward_transition_probs_.cuda();
@@ -81,28 +82,25 @@ ChainComputation::ChainComputation(
     backward_transition_indices_ = backward_transition_indices_.cuda();
     backward_transition_probs_ = backward_transition_probs_.cuda();
     leaky_probs_ = leaky_probs_.cuda();
+    initial_probs_ = initial_probs_.cuda();
     final_probs_ = final_probs_.cuda();
     start_state_ = start_state_.cuda();
     sequence_lengths_ = sequence_lengths_.cuda();
-    alpha_ = alpha_.cuda();
-    beta_ = beta_.cuda();
-    tot_prob_ = tot_prob_.cuda();
-    tot_log_prob_ = tot_log_prob_.cuda();
   }
 }
 
 void ChainComputation::AlphaFirstFrame() {
   auto alpha_initial_state = alpha_.narrow(1, 0, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
-  alpha_initial_state.scatter_(1, start_state_.unsqueeze(1), 1.0);
+  alpha_initial_state.copy_(initial_probs_);
 }
 
 void ChainComputation::AlphaSum(int t) {
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
-  long batch_size;
+  int batch_size;
   if (t == 0) {
     batch_size = num_sequences_;
   } else {
-    batch_size = batch_sizes_a[t - 1];
+    batch_size = (int) batch_sizes_a[t - 1];
   }
   auto this_alpha = alpha_.narrow(0, 0, batch_size)
     .narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
@@ -116,10 +114,10 @@ void ChainComputation::AlphaGeneralFrame(int t) {
   assert(t > 0 && t <= num_frames_);
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
   int num_hmm_states = num_states_,
-    num_frames = num_frames_,
-    num_pdfs = num_pdfs_,
-    num_transitions = num_transitions_;
-  long num_sequences = batch_sizes_a[t - 1];
+      num_frames = num_frames_,
+      num_pdfs = num_pdfs_,
+      num_transitions = num_transitions_;
+  int num_sequences = (int) batch_sizes_a[t - 1];
 
   if (cuda_) {
     dim3 dimBlock(std::min<int>(CU1DBLOCK, num_sequences), 1, 1);
@@ -128,13 +126,13 @@ void ChainComputation::AlphaGeneralFrame(int t) {
     if (dimGrid.y > 65535)  // the hardware doesn't allow more than this.
       dimGrid.y = 65535;
     cuda_chain_hmm_forward(dimGrid, dimBlock,
-			   backward_transition_indices_.data<int>(), 
-			   backward_transitions_.data<int>(),
-			   backward_transition_probs_.data<float>(),
-			   exp_nnet_output_.data<float>(),
-			   alpha_.data<float>(),
-			   t, num_sequences, num_frames,
-			   num_hmm_states, num_pdfs, num_transitions);
+        backward_transition_indices_.data_ptr<int>(),
+        backward_transitions_.data_ptr<int>(),
+        backward_transition_probs_.data_ptr<float>(),
+        exp_nnet_output_.data_ptr<float>(),
+        alpha_.data_ptr<float>(),
+        t, num_sequences, num_frames,
+        num_hmm_states, num_pdfs, num_transitions);
   } else
   {
     // Rows t and t-1 of alpha
@@ -169,8 +167,7 @@ void ChainComputation::AlphaGeneralFrame(int t) {
         // a good numeric range.  This won't affect the posteriors, but when
         // computing the total likelihood we'll need to compensate for it later
         // on.
-        float arbitrary_scale =
-	  1.0 / prev_alpha_a[s][num_hmm_states];
+        float arbitrary_scale = 1.0 / prev_alpha_a[s][num_hmm_states];
         assert(this_tot_alpha - this_tot_alpha == 0);
         this_alpha_a[s][h] = this_tot_alpha * arbitrary_scale;
       }
@@ -180,11 +177,11 @@ void ChainComputation::AlphaGeneralFrame(int t) {
 
 void ChainComputation::AlphaDash(int t) {
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
-  long batch_size;
+  int batch_size;
   if (t == 0) {
     batch_size = num_sequences_;
   } else {
-    batch_size = batch_sizes_a[t - 1];
+    batch_size = (int) batch_sizes_a[t - 1];
   }
   torch::Tensor this_alpha = alpha_.narrow(0, 0, batch_size)
     .narrow(1, t, 1).narrow(2, 0, num_states_).squeeze(1); // B x H
@@ -193,7 +190,7 @@ void ChainComputation::AlphaDash(int t) {
 
   // (B x H) * (B x H) -> B x H
   this_alpha.addcmul_(this_tot_alpha.expand_as(this_alpha),
-		      leaky_probs_.narrow(0, 0, batch_size), leaky_hmm_coefficient_);
+      leaky_probs_.narrow(0, 0, batch_size), leaky_hmm_coefficient_);
 }
 
 torch::Tensor ChainComputation::Forward() {
@@ -215,11 +212,16 @@ torch::Tensor ChainComputation::ComputeTotLogLike() {
   torch::Tensor last_frame_alpha_dash = alpha_.gather(1, last_frame_index)
     .narrow(2, 0, num_states_).squeeze(1); // B x H
   torch::Tensor last_frame_alpha_dash_sum = last_frame_alpha_dash.mul(final_probs_).sum(1); // B
+
+  // Set alpha_tot(T) in each sequence to 0.0 so that its original value will
+  // not be added to tot_log_prob_. The original value has already been used in
+  // AlphaDash() and from now on it is of no use. B x (T+1) <- B x 1
+  alpha_.narrow(2, num_states_, 1).squeeze(2).scatter_(1, sequence_lengths_.unsqueeze(1), 0.0);
   torch::Tensor alpha_frame_tot = alpha_.narrow(1, 0, num_frames_)
     .narrow(2, num_states_, 1).squeeze(2); // B x T
   // padding values (0.0) is unchanged, otherwise apply log
   torch::Tensor alpha_frame_log_tot = torch::where(alpha_frame_tot.eq(0.0),
-    alpha_frame_tot.new_zeros({1}), alpha_frame_tot.log()); // B x T
+      alpha_frame_tot.new_zeros({1}), alpha_frame_tot.log()); // B x T
 
   // as alpha_frame_log_tot is padded with 0.0, the sum below is fine
   tot_log_prob_.copy_(alpha_frame_log_tot.sum(1) + last_frame_alpha_dash_sum.log()); // B
@@ -246,26 +248,26 @@ void ChainComputation::BetaDashGeneralFrame(int t) {
   assert(t >= 0 && t < num_frames_);
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
   int num_hmm_states = num_states_,
-    num_frames = num_frames_,
-    num_pdfs = num_pdfs_,
-    num_transitions = num_transitions_;
-  long num_sequences = batch_sizes_a[t];
-  
+      num_frames = num_frames_,
+      num_pdfs = num_pdfs_,
+      num_transitions = num_transitions_;
+  int num_sequences = (int) batch_sizes_a[t];
+
   if (cuda_) {
     dim3 dimBlock(std::min<int>(CU1DBLOCK, num_sequences), 1, 1);
     dim3 dimGrid(n_blocks(num_sequences, dimBlock.x), num_hmm_states, 1);
     if (dimGrid.y > 65535)  // the hardware doesn't allow more than this.
       dimGrid.y = 65535;
-    cuda_chain_hmm_backward(dimGrid, dimBlock, 
-			    forward_transition_indices_.data<int>(),
-			    forward_transitions_.data<int>(),
-			    forward_transition_probs_.data<float>(),
-			    exp_nnet_output_.data<float>(),
-			    alpha_.data<float>(),
-			    beta_.data<float>(),
-			    nnet_output_deriv_.data<float>(),
-			    t, num_sequences, num_frames,
-			    num_hmm_states, num_pdfs, num_transitions);
+    cuda_chain_hmm_backward(dimGrid, dimBlock,
+        forward_transition_indices_.data_ptr<int>(),
+        forward_transitions_.data_ptr<int>(),
+        forward_transition_probs_.data_ptr<float>(),
+        exp_nnet_output_.data_ptr<float>(),
+        alpha_.data_ptr<float>(),
+        beta_.data_ptr<float>(),
+        nnet_output_deriv_.data_ptr<float>(),
+        t, num_sequences, num_frames,
+        num_hmm_states, num_pdfs, num_transitions);
   } else
   {
     torch::Tensor this_alpha_dash = alpha_.narrow(1, t, 1).squeeze(1),
@@ -290,7 +292,7 @@ void ChainComputation::BetaDashGeneralFrame(int t) {
         float this_alpha_dash_prob = this_alpha_dash_a[s][h];
         float tot_variable_factor = 0.0;
         float occupation_factor = this_alpha_dash_prob * arbitrary_scale;
-        for (int trans_i = transition_indices_a[s][h][0]; 
+        for (int trans_i = transition_indices_a[s][h][0];
             trans_i != transition_indices_a[s][h][1]; trans_i++) {
           float transition_prob = transition_probs_a[s][trans_i];
           int pdf_id = transitions_a[s][trans_i][2],
@@ -314,7 +316,7 @@ void ChainComputation::Beta(int t) {
   if (t == 0) {
     batch_size = num_sequences_;
   } else {
-    batch_size = batch_sizes_a[t - 1];
+    batch_size = (int) batch_sizes_a[t - 1];
   }
   torch::Tensor this_beta_dash = beta_.narrow(0, 0, batch_size)
     .narrow(1, t % 2, 1).squeeze(1); // B x H
@@ -343,32 +345,32 @@ bool ChainComputation::Backward() {
 void ChainComputation::BetaGeneralFrameDebug(int t) {
   auto batch_sizes_a = batch_sizes_.accessor<long, 1>();
   int batch_size;
-  int batch_size_next;
   if (t == 0) {
     batch_size = num_sequences_;
   } else {
-    batch_size = batch_sizes_a[t - 1];
+    batch_size = (int) batch_sizes_a[t - 1];
   }
-  batch_size_next = batch_sizes_a[t];
-  
+  int batch_size_next = (int) batch_sizes_a[t];
+
   int num_hmm_states = num_states_;
   torch::Tensor this_alpha_dash = alpha_.narrow(0, 0, batch_size)
     .narrow(1, t, 1).narrow(2, 0, num_hmm_states).squeeze(1); // B x H
   torch::Tensor this_beta_dash = beta_.narrow(0, 0, batch_size)
     .narrow(1, t % 2, 1).squeeze(1); // B x H
 
-  torch::Tensor this_log_prob_deriv = nnet_output_deriv_.narrow(0, 0, batch_size).narrow(1, t, 1);
+  torch::Tensor this_log_prob_deriv = nnet_output_deriv_.narrow(0, 0, batch_size_next).narrow(1, t, 1);
 
-  float alpha_beta_product = torch::bmm(this_alpha_dash.unsqueeze(1), this_beta_dash.unsqueeze(2)).sum().cpu().data<float>()[0];
-  float this_log_prob_deriv_sum = this_log_prob_deriv.sum().cpu().data<float>()[0];
+  float alpha_beta_product = torch::bmm(this_alpha_dash.unsqueeze(1),
+      this_beta_dash.unsqueeze(2)).sum().item<float>();
+  float this_log_prob_deriv_sum = this_log_prob_deriv.sum().item<float>();
 
   if (!ApproxEqual(alpha_beta_product, batch_size)) {
-    std::cerr  << "On time " << t << ", alpha-beta product "
-               << alpha_beta_product << " != " << batch_size
-               << " alpha-sum = " << torch::sum(this_alpha_dash.narrow(0, 0, batch_size))
-               << ", beta-sum = " << torch::sum(this_beta_dash.narrow(0, 0, batch_size))
-               << std::endl;
-    if (fabs(alpha_beta_product - batch_size) > 2.0) {
+    std::cerr << "On time " << t << ", alpha-beta product "
+              << alpha_beta_product << " != " << batch_size
+              << " alpha-sum = " << this_alpha_dash.sum().item<float>()
+              << ", beta-sum = " << this_beta_dash.sum().item<float>()
+              << std::endl;
+    if (fabs(alpha_beta_product - batch_size) > 0.05 * batch_size) {
       std::cerr << "Excessive error detected, will abandon this minibatch"
                 << std::endl;
       ok_ = false;
@@ -376,12 +378,11 @@ void ChainComputation::BetaGeneralFrameDebug(int t) {
   }
   // use higher tolerance, since we are using randomized pruning for the
   // log-prob derivatives.
-  if (!ApproxEqual(this_log_prob_deriv_sum,
-                   batch_size_next, 0.01)) {
+  if (!ApproxEqual(this_log_prob_deriv_sum, batch_size_next, 0.01)) {
     std::cerr << "On time " << t << ", log-prob-deriv sum "
-               << this_log_prob_deriv_sum << " != " << batch_size_next
-               << std::endl;
-    if (fabs(this_log_prob_deriv_sum - batch_size_next) > 2.0) {
+              << this_log_prob_deriv_sum << " != " << batch_size_next
+              << std::endl;
+    if (fabs(this_log_prob_deriv_sum - batch_size_next) > 0.05 * batch_size_next) {
       std::cerr << "Excessive error detected, will abandon this minibatch"
                 << std::endl;
       ok_ = false;

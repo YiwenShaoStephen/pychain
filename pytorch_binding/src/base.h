@@ -1,7 +1,35 @@
 #ifndef BASE_H_
 #define BASE_H_
 
+#include<cmath>
+
 #define CU1DBLOCK   256
+
+#ifndef FLT_EPSILON
+#define FLT_EPSILON 1.19209290e-7f
+#endif
+
+static const float kMinLogDiffFloat = std::log(FLT_EPSILON);  // negative!
+
+inline float LogAdd(float x, float y) {
+   float diff;
+
+   if (x < y) {
+     diff = x - y;
+     x = y;
+   } else {
+     diff = y - x;
+   }
+   // diff is negative.  x is now the larger one.
+
+   if (diff >= kMinLogDiffFloat) {
+     float res;
+     res = x + std::log1p(std::exp(diff));
+     return res;
+   } else {
+     return x;  // return the larger one.
+   }
+}
 
 extern int g_verbose_level;
 
