@@ -4,9 +4,10 @@ End-to-end version of lattice-free MMI (LF-MMI or chain model) implemented in Py
 *TODO*:
 regular version of LF-MMI.
 ## What's New:
-- GPU computation for both denominator and numerator graphs
-- Support unequal length sequences within a minibatch
-- Examples of using PyChain: [Espresso](https://github.com/freewym/espresso) and [pychain-example](https://github.com/YiwenShaoStephen/pychain_example)
+- August 2020: GPU computation for graphs in log domain (recommended for numerator graphs)
+- April 2020: Support unequal length sequences within a minibatch
+- April 2020: Examples of using PyChain: [Espresso](https://github.com/freewym/espresso) and [pychain-example](https://github.com/YiwenShaoStephen/pychain_example)
+- January 2020: GPU computation for both denominator and numerator graphs
 
 ## Installation and Requirements
 * [PyTorch](http://pytorch.org/) version >= 1.4.0
