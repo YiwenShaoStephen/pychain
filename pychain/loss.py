@@ -27,7 +27,7 @@ import pychain_C
 class ChainFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, input_lengths, graphs, leaky_coefficient=1e-5):
-        input = input.clamp(-30, 30)  # clamp for both the denominator and the numerator
+        input = input.contiguous().clamp(-30, 30)  # clamp for both the denominator and the numerator
         B = input.size(0)
         if B != graphs.batch_size:
             raise ValueError(
